@@ -104,7 +104,7 @@
           (() => { const o=el("option", { value:"0" }, "optional"); if(!f.required) o.selected = true; return o; })(),
           (() => { const o=el("option", { value:"1" }, "required"); if(f.required) o.selected = true; return o; })(),
         ),
-        el("div", { class:"row gap8" },
+        el("div", { class:"row gap8 wrap" },
           el("button", { class:"btn", onclick: () => editOptions(f) }, "Options"),
           el("button", { class:"btn danger", onclick: () => deleteField(f.id) }, "Delete"),
         )
@@ -120,7 +120,6 @@
     const typeInputs  = Array.from(fieldListEl.querySelectorAll('[data-kind="type"]'));
     const reqInputs   = Array.from(fieldListEl.querySelectorAll('[data-kind="required"]'));
 
-    // Save each field if changed (simple approach)
     for (const inp of labelInputs){
       const id = Number(inp.getAttribute("data-id"));
       const label = inp.value.trim();
@@ -159,6 +158,7 @@
       document.getElementById("modalClose").click();
       await selectTemplate(selectedTemplateId, true);
       await loadTemplates();
+      toast("Options saved ✅", "ok");
     }}, "Save");
 
     Modal.open("Edit Options", body, [
@@ -167,24 +167,22 @@
     ]);
   }
 
-  // New Template
   document.getElementById("newTemplateBtn").addEventListener("click", async () => {
     const name = prompt("Template name (Marathi/English):", "नवीन टेबल / New Table");
     if (!name) return;
     const tpl = await API.request("/api/admin/templates", { method:"POST", body:{ name } });
     await loadTemplates();
     await selectTemplate(tpl.id);
+    toast("Template created ✅", "ok");
   });
 
-  // Save template name
   document.getElementById("saveTplBtn").addEventListener("click", async () => {
     if (!selectedTemplateId) return;
     await API.request(`/api/admin/templates/${selectedTemplateId}`, { method:"PUT", body:{ name: tplNameEl.value.trim() } });
     await loadTemplates();
-    showToast("Saved!");
+    toast("Saved ✅", "ok");
   });
 
-  // Delete template
   document.getElementById("deleteTplBtn").addEventListener("click", async () => {
     if (!selectedTemplateId) return;
     const ok = confirm("Delete this template and all its fields?");
@@ -193,9 +191,9 @@
     selectedTemplateId = null;
     await loadTemplates();
     await selectTemplate(null);
+    toast("Deleted ✅", "ok");
   });
 
-  // Add field
   document.getElementById("addFieldBtn").addEventListener("click", async () => {
     if (!selectedTemplateId) return;
     const label = prompt("Field label (Marathi/English):", "माहिती / Information");
@@ -203,18 +201,17 @@
     await API.request(`/api/admin/templates/${selectedTemplateId}/fields`, { method:"POST", body:{ label, type:"text", required:false } });
     await selectTemplate(selectedTemplateId, true);
     await loadTemplates();
+    toast("Field added ✅", "ok");
   });
 
-  // Publish template
   document.getElementById("publishBtn").addEventListener("click", async () => {
     if (!selectedTemplateId) return;
     await saveFieldEdits();
     await API.request(`/api/admin/templates/${selectedTemplateId}/publish`, { method:"POST" });
     await loadTemplates();
-    showToast("Published!");
+    toast("Published ✅", "ok");
   });
 
-  // Assign template to districts
   document.getElementById("assignBtn").addEventListener("click", async () => {
     if (!selectedTemplateId) return;
 
@@ -222,7 +219,9 @@
     const checks = districts.map(d => {
       const cb = el("input", { type:"checkbox", value: d.id });
       const row = el("label", { class:"item", style:"display:flex;align-items:center;gap:10px;cursor:pointer;" },
-        cb, el("div", {}, el("div", { class:"item-title" }, d.district_name || d.username),
+        cb,
+        el("div", {},
+          el("div", { class:"item-title" }, d.district_name || d.username),
           el("div", { class:"item-sub" }, `@${d.username}`)
         )
       );
@@ -241,7 +240,7 @@
       if (!ids.length) return alert("Select at least one district.");
       await API.request(`/api/admin/templates/${selectedTemplateId}/assign`, { method:"POST", body:{ districtUserIds: ids } });
       document.getElementById("modalClose").click();
-      showToast("Assigned!");
+      toast("Assigned ✅", "ok");
     }}, "Assign");
 
     Modal.open("Assign Template", body, [
@@ -250,7 +249,6 @@
     ]);
   });
 
-  // District user creation
   document.getElementById("createDistrictBtn").addEventListener("click", async () => {
     const msg = document.getElementById("districtMsg");
     showMsg(msg,"");
@@ -265,8 +263,10 @@
       document.getElementById("dName").value = "";
       document.getElementById("dPassword").value = "";
       await loadDistricts();
+      toast("District user created ✅", "ok");
     }catch(e){
       showMsg(msg, e.message, false);
+      toast(e.message, "err");
     }
   });
 
@@ -288,7 +288,6 @@
     });
   }
 
-  // Submissions
   const submissionListEl = document.getElementById("submissionList");
   const submissionPreviewEl = document.getElementById("submissionPreview");
 
@@ -354,23 +353,21 @@
   function exportSubmissionCsv(sub){
     const csv = toCsv([["Field","Value"], ...sub.values.map(v => [v.label, v.value ?? ""])]);
     download(`submission_${sub.district_name}_${sub.template_name}.csv`.replaceAll(" ","_"), csv, "text/csv;charset=utf-8");
+    toast("CSV exported ✅", "ok");
   }
 
-  document.getElementById("refreshSubsBtn").addEventListener("click", loadSubmissions);
+  document.getElementById("refreshSubsBtn").addEventListener("click", async () => {
+    await loadSubmissions();
+    toast("Refreshed ✅", "ok");
+  });
 
   document.getElementById("unlockBtn").addEventListener("click", async () => {
     if (!selectedSubmissionId) return alert("Select a submission.");
     await API.request(`/api/admin/submissions/${selectedSubmissionId}/unlock`, { method:"POST" });
     await loadSubmissions();
-    showToast("Unlocked (district can edit again).");
+    toast("Unlocked ✅", "ok");
   });
 
-  // Auto-save field edits when leaving tab / clicking elsewhere (simple)
-  window.addEventListener("beforeunload", () => {
-    // best-effort; not awaited
-  });
-
-  // Save field edits when clicking outside or switching tabs
   document.addEventListener("change", async (e) => {
     if (!selectedTemplateId) return;
     if (e.target?.getAttribute?.("data-id")){
@@ -378,13 +375,6 @@
     }
   });
 
-  function showToast(text){
-    const n = el("div", { class:"item", style:"position:fixed;right:18px;bottom:18px;z-index:999;background:rgba(2,8,20,0.7);" }, text);
-    document.body.appendChild(n);
-    setTimeout(() => n.remove(), 1600);
-  }
-
-  // initial load
   await loadTemplates();
   await loadDistricts();
   await loadSubmissions();

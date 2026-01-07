@@ -118,6 +118,21 @@ const Modal = {
   }
 };
 
+/* Polished Toast */
+function toast(message, type="ok", ms=1800){
+  const stack = document.getElementById("toastStack");
+  if (!stack) return; // page may not have toast container
+  const node = document.createElement("div");
+  node.className = `toast ${type === "err" ? "err" : "ok"}`;
+  node.textContent = message;
+  stack.appendChild(node);
+  setTimeout(() => {
+    node.style.opacity = "0";
+    node.style.transform = "translateY(6px)";
+    setTimeout(() => node.remove(), 220);
+  }, ms);
+}
+
 async function ensureAuth(role){
   try{
     const me = await API.me();

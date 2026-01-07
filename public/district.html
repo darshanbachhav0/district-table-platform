@@ -1,81 +1,94 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang="mr">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>District Portal</title>
-<style>
-:root{--primary:#0a84ff;--bg:#0a0f1a;--panel:#121826;--border:#1f2937;--radius:10px;
---font:"Segoe UI","Noto Sans Devanagari","Mangal",sans-serif;}
-*{box-sizing:border-box;font-family:var(--font);color:#fff;}
-body{margin:0;background:var(--bg);min-height:100vh;}
-header{background:var(--panel);padding:1rem 2rem;
-display:flex;justify-content:space-between;align-items:center;
-border-bottom:1px solid var(--border);}
-h1{font-size:1.3rem;}
-main{padding:2rem;max-width:1100px;margin:auto;}
-table{width:100%;border-collapse:collapse;}
-th,td{padding:0.7rem;border-bottom:1px solid var(--border);}
-td input{width:100%;padding:0.4rem;border:none;border-radius:6px;
-background:#1f2937;color:#fff;}
-button{background:var(--primary);border:none;border-radius:var(--radius);
-padding:0.6rem 1rem;margin-top:1rem;cursor:pointer;}
-tr:hover{background:rgba(255,255,255,0.05);}
-@media(max-width:768px){main{padding:1rem;}table{font-size:0.85rem;}}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>District Portal - District Table Platform</title>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-<header>
-  <h1 id="districtName">District Portal</h1>
-  <button onclick="logout()">Logout</button>
-</header>
-<main>
-  <h2>Assigned Tables</h2>
-  <div id="tables"></div>
-</main>
-<script>
-const token=localStorage.getItem("token");
-if(!token) location.href="/";
-async function load(){
-  const res=await fetch("/api/district/assignments",{headers:{Authorization:`Bearer ${token}`}});
-  const data=await res.json();
-  const container=document.getElementById("tables");
-  container.innerHTML="";
-  data.forEach(tbl=>{
-    const div=document.createElement("div");
-    div.style.marginBottom="2rem";
-    div.innerHTML=`<h3>${tbl.name}</h3>
-    <table>
-      <thead><tr>${tbl.columns.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
-      <tbody>
-      ${tbl.rows.map((r,ri)=>`<tr>${tbl.columns.map((c,ci)=>
-        `<td><input value="${r[c]||""}" data-row="${ri}" data-col="${c}" data-table="${tbl.id}"></td>`
-      ).join("")}</tr>`).join("")}
-      </tbody>
-    </table>
-    <button onclick="send('${tbl.id}')">Send to Admin</button>`;
-    container.appendChild(div);
-  });
-  document.querySelectorAll("input").forEach(inp=>{
-    inp.addEventListener("change",async e=>{
-      const {table,row,col}=e.target.dataset;
-      const value=e.target.value;
-      await fetch(`/api/district/assignments/${table}`,{
-        method:"PUT",
-        headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
-        body:JSON.stringify({row,col,value})
-      });
-    });
-  });
-}
-async function send(id){
-  await fetch(`/api/district/assignments/${id}/send`,{
-    method:"POST",headers:{Authorization:`Bearer ${token}`}
-  });
-  alert("Sent to Admin ✅");
-}
-function logout(){localStorage.clear();location.href="/";}
-load();
-</script>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">DT</div>
+        <div>
+          <div class="brand-title">District Portal</div>
+          <div id="districtSubtitle" class="brand-sub">Fill your assigned tables and send to admin</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span id="meBadge" class="badge"></span>
+        <button id="logoutBtn" class="btn">Logout</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title">District Submission</h1>
+          <div class="page-desc">Fill values in Marathi or English. Save draft anytime, then Send to Admin when ready.</div>
+        </div>
+      </div>
+
+      <div class="grid two">
+        <section class="card">
+          <h2 class="h2">Assigned Tables</h2>
+          <div class="small muted">Select a table to start filling.</div>
+          <div class="divider"></div>
+          <div id="assignmentList" class="list"></div>
+        </section>
+
+        <section class="card">
+          <div class="row space-between wrap gap10">
+            <div>
+              <h2 class="h2">Fill Table</h2>
+              <div class="small muted">After you Send, editing is locked until admin unlocks.</div>
+            </div>
+            <div class="row gap8 wrap">
+              <button id="saveDraftBtn" class="btn">Save Draft</button>
+              <button id="sendBtn" class="btn primary">Send to Admin</button>
+            </div>
+          </div>
+
+          <div id="assignmentEmpty" class="muted mt10">Select a table from the left.</div>
+
+          <div id="assignmentEditor" class="hidden">
+            <div class="row space-between wrap gap10">
+              <div>
+                <div id="assignmentTitle" class="h3"></div>
+                <div id="assignmentStatus" class="small muted"></div>
+              </div>
+              <button id="exportCsvBtn" class="btn">Export CSV</button>
+            </div>
+
+            <div class="divider"></div>
+            <div id="formFields" class="form"></div>
+            <div id="districtMsg" class="msg"></div>
+
+            <div class="divider"></div>
+            <div class="small muted">मराठी किंवा English मध्ये माहिती टाईप करा. (You can type in Marathi or English.)</div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Toast container -->
+    <div id="toastStack" class="toast-stack"></div>
+
+    <!-- Modals -->
+    <div id="modalBackdrop" class="modal-backdrop hidden"></div>
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div id="modalTitle" class="modal-title">Modal</div>
+        <button id="modalClose" class="btn">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalFoot" class="modal-foot"></div>
+    </div>
+  </div>
+
+  <script src="/utils.js"></script>
+  <script src="/district.js"></script>
 </body>
 </html>
