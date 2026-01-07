@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>District Table Platform - Login</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">DT</div>
+        <div>
+          <div class="brand-title">District Table Platform</div>
+          <div class="brand-sub">Admin → District tables (Marathi + English)</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <h1 class="h1">Login</h1>
+        <p class="muted">Use your username and password. Admin and District logins redirect automatically.</p>
+
+        <form id="loginForm" class="form">
+          <label class="label">Username</label>
+          <input id="username" class="input" autocomplete="username" placeholder="admin / amravati_rural / ..." />
+
+          <label class="label">Password</label>
+          <input id="password" type="password" class="input" autocomplete="current-password" placeholder="••••••••" />
+
+          <button class="btn primary" type="submit">Sign in</button>
+          <div id="loginMsg" class="msg"></div>
+        </form>
+
+        <div class="divider"></div>
+        <details class="details">
+          <summary>Default accounts</summary>
+          <div class="small">
+            <div><b>Admin:</b> admin / admin123</div>
+            <div class="mt8"><b>District:</b> amravati_rural, amravati_city, buldhana, washim, yavatmal, akola / district123</div>
+          </div>
+        </details>
+      </section>
+    </main>
+  </div>
+
+  <script src="/utils.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

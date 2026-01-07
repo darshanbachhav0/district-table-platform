@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="mr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>District Portal - District Table Platform</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">DT</div>
+        <div>
+          <div class="brand-title">District Portal</div>
+          <div id="districtSubtitle" class="brand-sub">Fill your assigned tables and send to admin</div>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <span id="meBadge" class="badge"></span>
+        <button id="logoutBtn" class="btn">Logout</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <div class="grid two">
+        <section class="card">
+          <h2 class="h2">Assigned Tables</h2>
+          <div id="assignmentList" class="list"></div>
+        </section>
+
+        <section class="card">
+          <div class="row space-between">
+            <h2 class="h2">Fill Table</h2>
+            <div class="row gap8">
+              <button id="saveDraftBtn" class="btn">Save Draft</button>
+              <button id="sendBtn" class="btn primary">Send to Admin</button>
+            </div>
+          </div>
+
+          <div id="assignmentEmpty" class="muted">Select a table from the left.</div>
+
+          <div id="assignmentEditor" class="hidden">
+            <div class="row space-between">
+              <div>
+                <div id="assignmentTitle" class="h3"></div>
+                <div id="assignmentStatus" class="small muted"></div>
+              </div>
+              <button id="exportCsvBtn" class="btn">Export CSV</button>
+            </div>
+
+            <div class="divider"></div>
+            <div id="formFields" class="form"></div>
+            <div id="districtMsg" class="msg"></div>
+
+            <div class="divider"></div>
+            <div class="small muted">मराठी किंवा English मध्ये माहिती टाईप करा. (You can type in Marathi or English.)</div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <div id="modalBackdrop" class="modal-backdrop hidden"></div>
+    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-head">
+        <div id="modalTitle" class="modal-title">Modal</div>
+        <button id="modalClose" class="btn">✕</button>
+      </div>
+      <div id="modalBody" class="modal-body"></div>
+      <div id="modalFoot" class="modal-foot"></div>
+    </div>
+  </div>
+
+  <script src="/utils.js"></script>
+  <script src="/district.js"></script>
+</body>
+</html>
