@@ -1,154 +1,98 @@
-<!doctype html>
-<html lang="mr">
+<!DOCTYPE html>
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Admin Portal - District Table Platform</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Dashboard</title>
+  <style>
+    :root {
+      --primary:#0a84ff;
+      --bg:#0a0f1a;
+      --panel:#121826;
+      --border:#1f2937;
+      --radius:10px;
+      --font:"Segoe UI","Noto Sans Devanagari","Mangal",sans-serif;
+    }
+    *{box-sizing:border-box;font-family:var(--font);color:#fff;}
+    body{margin:0;background:var(--bg);min-height:100vh;}
+    header{
+      background:var(--panel);
+      padding:1rem 2rem;
+      display:flex;justify-content:space-between;align-items:center;
+      border-bottom:1px solid var(--border);
+    }
+    h1{font-size:1.4rem;}
+    button,select,input{
+      background:var(--primary);border:none;border-radius:var(--radius);
+      padding:0.5rem 1rem;color:#fff;cursor:pointer;
+    }
+    main{padding:2rem;max-width:1200px;margin:auto;}
+    table{width:100%;border-collapse:collapse;margin-top:1rem;}
+    th,td{padding:0.8rem;border-bottom:1px solid var(--border);text-align:left;}
+    tr:hover{background:rgba(255,255,255,0.05);}
+    .card{
+      background:var(--panel);
+      padding:1rem 1.5rem;
+      border-radius:var(--radius);
+      margin-bottom:1rem;
+    }
+    @media(max-width:768px){
+      main{padding:1rem;}
+      table{font-size:0.85rem;}
+    }
+  </style>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo">DT</div>
-        <div>
-          <div class="brand-title">Admin Portal</div>
-          <div class="brand-sub">Create templates → assign to districts → monitor submissions</div>
-        </div>
+  <header>
+    <h1>Admin Portal</h1>
+    <button onclick="logout()">Logout</button>
+  </header>
+  <main>
+    <div class="card">
+      <h2>Create or Edit Table Template</h2>
+      <div>
+        <input id="tableName" placeholder="Table name..." style="width:60%;padding:0.5rem;border-radius:var(--radius);border:none;background:#1f2937;color:#fff;">
+        <button onclick="createTable()">Add Table</button>
       </div>
-
-      <div class="topbar-actions">
-        <span id="meBadge" class="badge"></span>
-        <button id="logoutBtn" class="btn">Logout</button>
-      </div>
-    </header>
-
-    <main class="container">
-      <div class="tabs">
-        <button class="tab active" data-tab="templates">Templates</button>
-        <button class="tab" data-tab="districts">District Users</button>
-        <button class="tab" data-tab="submissions">Submissions</button>
-      </div>
-
-      <!-- Templates -->
-      <section id="tab-templates" class="panel">
-        <div class="panel-head">
-          <h2 class="h2">Templates (टेबल/फॉर्म)</h2>
-          <button id="newTemplateBtn" class="btn primary">+ New Template</button>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <h3 class="h3">Template List</h3>
-            <div id="templateList" class="list"></div>
-          </div>
-
-          <div class="card">
-            <div class="row space-between">
-              <h3 class="h3">Template Builder</h3>
-              <div class="row gap8">
-                <button id="publishBtn" class="btn">Publish</button>
-                <button id="assignBtn" class="btn">Assign</button>
-              </div>
-            </div>
-
-            <div id="templateEditorEmpty" class="muted">Select a template to edit fields.</div>
-
-            <div id="templateEditor" class="hidden">
-              <div class="form">
-                <label class="label">Template Name</label>
-                <input id="tplName" class="input" placeholder="उदा. साप्ताहिक अहवाल / Weekly Report" />
-                <div class="row gap8 mt10">
-                  <button id="saveTplBtn" class="btn primary">Save</button>
-                  <button id="deleteTplBtn" class="btn danger">Delete</button>
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="row space-between">
-                <h4 class="h4">Fields / Columns</h4>
-                <button id="addFieldBtn" class="btn">+ Add Field</button>
-              </div>
-              <div id="fieldList" class="field-list"></div>
-
-              <div class="divider"></div>
-              <div class="small muted">Tip: Labels can be Marathi or English. District users can only fill values, not edit labels.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Districts -->
-      <section id="tab-districts" class="panel hidden">
-        <div class="panel-head">
-          <h2 class="h2">District Users</h2>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <h3 class="h3">Create District User</h3>
-            <div class="form">
-              <label class="label">Username (login)</label>
-              <input id="dUsername" class="input" placeholder="e.g. nandurbar" />
-
-              <label class="label">District Name (display)</label>
-              <input id="dName" class="input" placeholder="e.g. नंदुरबार / Nandurbar" />
-
-              <label class="label">Password</label>
-              <input id="dPassword" class="input" placeholder="set password" />
-
-              <button id="createDistrictBtn" class="btn primary">Create</button>
-              <div id="districtMsg" class="msg"></div>
-            </div>
-          </div>
-
-          <div class="card">
-            <h3 class="h3">Existing Districts</h3>
-            <div id="districtList" class="list"></div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Submissions -->
-      <section id="tab-submissions" class="panel hidden">
-        <div class="panel-head">
-          <h2 class="h2">Submissions</h2>
-          <button id="refreshSubsBtn" class="btn">Refresh</button>
-        </div>
-
-        <div class="grid two">
-          <div class="card">
-            <h3 class="h3">All Assigned Tables</h3>
-            <div id="submissionList" class="list"></div>
-          </div>
-
-          <div class="card">
-            <div class="row space-between">
-              <h3 class="h3">Submission Preview</h3>
-              <button id="unlockBtn" class="btn">Unlock (Admin)</button>
-            </div>
-            <div id="submissionPreview" class="muted">Select a submission to preview.</div>
-          </div>
-        </div>
-      </section>
-
-    </main>
-
-    <!-- Modals -->
-    <div id="modalBackdrop" class="modal-backdrop hidden"></div>
-
-    <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
-      <div class="modal-head">
-        <div id="modalTitle" class="modal-title">Modal</div>
-        <button id="modalClose" class="btn">✕</button>
-      </div>
-      <div id="modalBody" class="modal-body"></div>
-      <div id="modalFoot" class="modal-foot"></div>
     </div>
-  </div>
-
-  <script src="/utils.js"></script>
-  <script src="/admin.js"></script>
+    <div class="card">
+      <h2>Existing Tables</h2>
+      <table id="tableList">
+        <thead><tr><th>Name</th><th>Districts Sent To</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+  <script>
+    const token = localStorage.getItem("token");
+    if(!token) location.href="/";
+    async function loadTables(){
+      const res = await fetch("/api/admin/tables",{headers:{Authorization:`Bearer ${token}`}});
+      const data = await res.json();
+      const tbody = document.querySelector("#tableList tbody");
+      tbody.innerHTML="";
+      data.forEach(t=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td>${t.name}</td>
+          <td>${t.districts.join(", ")}</td>
+          <td>${t.status}</td>
+          <td><button onclick="editTable('${t.id}')">Edit</button></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    async function createTable(){
+      const name=document.getElementById("tableName").value.trim();
+      if(!name) return alert("Enter table name");
+      await fetch("/api/admin/tables",{
+        method:"POST",
+        headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        body:JSON.stringify({name})
+      });
+      loadTables();
+    }
+    function editTable(id){location.href=`/table-editor.html?id=${id}`;}
+    function logout(){localStorage.clear();location.href="/";}
+    loadTables();
+  </script>
 </body>
 </html>

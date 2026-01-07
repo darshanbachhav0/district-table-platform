@@ -1,53 +1,101 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>District Table Platform - Login</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="logo.png" />
+  <style>
+    :root {
+      --primary: #0a84ff;
+      --bg: linear-gradient(135deg, #0a0f1a, #1b2735);
+      --card-bg: rgba(255, 255, 255, 0.05);
+      --border: rgba(255, 255, 255, 0.1);
+      --radius: 14px;
+      --font: "Segoe UI", "Noto Sans Devanagari", "Mangal", sans-serif;
+    }
+    * { box-sizing: border-box; font-family: var(--font); color: #fff; }
+    body {
+      margin: 0; height: 100vh;
+      background: var(--bg);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-card {
+      width: 90%; max-width: 400px;
+      background: var(--card-bg);
+      backdrop-filter: blur(12px);
+      padding: 2rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+      text-align: center;
+      transition: transform 0.3s;
+    }
+    .login-card:hover { transform: translateY(-3px); }
+    h1 {
+      margin-bottom: 1rem;
+      font-size: 1.8rem;
+      background: linear-gradient(90deg, #6dd5ed, #2193b0);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    input {
+      width: 100%; padding: 0.7rem;
+      border: none; border-radius: var(--radius);
+      background: rgba(255,255,255,0.08);
+      margin: 0.4rem 0; font-size: 1rem;
+    }
+    button {
+      width: 100%; padding: 0.8rem;
+      background: var(--primary);
+      border: none; border-radius: var(--radius);
+      color: #fff; font-weight: 600;
+      margin-top: 0.7rem;
+      cursor: pointer; transition: opacity 0.2s;
+    }
+    button:hover { opacity: 0.9; }
+    .error { color: #ff7b7b; margin-top: 0.5rem; font-size: 0.9rem; }
+    footer { margin-top: 1.2rem; font-size: 0.8rem; opacity: 0.7; }
+    @media (max-width: 480px) {
+      .login-card { padding: 1.4rem; }
+      h1 { font-size: 1.5rem; }
+    }
+  </style>
 </head>
 <body>
-  <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="logo">DT</div>
-        <div>
-          <div class="brand-title">District Table Platform</div>
-          <div class="brand-sub">Admin → District tables (Marathi + English)</div>
-        </div>
-      </div>
-    </header>
-
-    <main class="container">
-      <section class="card">
-        <h1 class="h1">Login</h1>
-        <p class="muted">Use your username and password. Admin and District logins redirect automatically.</p>
-
-        <form id="loginForm" class="form">
-          <label class="label">Username</label>
-          <input id="username" class="input" autocomplete="username" placeholder="admin / amravati_rural / ..." />
-
-          <label class="label">Password</label>
-          <input id="password" type="password" class="input" autocomplete="current-password" placeholder="••••••••" />
-
-          <button class="btn primary" type="submit">Sign in</button>
-          <div id="loginMsg" class="msg"></div>
-        </form>
-
-        <div class="divider"></div>
-        <details class="details">
-          <summary>Account help</summary>
-          <div class="small">
-            <div><b>Admin</b> credentials are set from server environment variables.</div>
-            <div class="mt8"><b>District</b> usernames: amravati_rural, amravati_city, buldhana, washim, yavatmal, akola</div>
-            <div class="mt8">Passwords are not shown here for security. Ask the admin.</div>
-          </div>
-        </details>
-      </section>
-    </main>
+  <div class="login-card">
+    <h1>District Table Platform</h1>
+    <p style="opacity:0.8;font-size:0.95rem;">Admin / District – मराठी + English</p>
+    <form id="loginForm">
+      <input type="text" id="username" placeholder="Username" required />
+      <input type="password" id="password" placeholder="Password" required />
+      <button type="submit">Sign In</button>
+      <div id="error" class="error"></div>
+    </form>
+    <footer>© 2026 UMA Data System</footer>
   </div>
 
-  <script src="/utils.js"></script>
-  <script src="/app.js"></script>
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const error = document.getElementById("error");
+      error.textContent = "";
+      try {
+        const res = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        localStorage.setItem("token", data.token);
+        location.href = data.role === "admin" ? "/admin.html" : "/district.html";
+      } catch (err) {
+        error.textContent = "Login failed. Please check credentials.";
+      }
+    });
+  </script>
 </body>
 </html>
