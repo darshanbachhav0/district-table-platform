@@ -13,7 +13,7 @@
         <div class="logo">DT</div>
         <div>
           <div class="brand-title">Admin Portal</div>
-          <div class="brand-sub">Templates • District Users • Submissions</div>
+          <div class="brand-sub">Templates • Districts • Submissions</div>
         </div>
       </div>
 
@@ -24,16 +24,6 @@
     </header>
 
     <main class="container">
-      <section class="card" style="margin-bottom:14px;">
-        <div class="row space-between" style="gap:10px; flex-wrap:wrap;">
-          <div>
-            <div class="h2">Administration</div>
-            <div class="muted small">Create table templates, assign to districts, and review submissions.</div>
-          </div>
-          <span class="badge">Light UI • Government Standard</span>
-        </div>
-      </section>
-
       <div class="tabs">
         <button class="tab active" data-tab="templates">Templates</button>
         <button class="tab" data-tab="districts">District Users</button>
@@ -42,34 +32,36 @@
 
       <!-- Templates -->
       <section id="tab-templates" class="panel">
-        <div class="panel-head">
-          <h2 class="h2">Templates (टेबल/फॉर्म)</h2>
+        <div class="row space-between wrap gap8" style="margin-bottom:12px;">
+          <div class="h2">Templates</div>
           <button id="newTemplateBtn" class="btn primary">+ New Template</button>
         </div>
 
         <div class="grid two">
           <div class="card">
-            <h3 class="h3">Template List</h3>
+            <div class="h3">Template List</div>
             <div id="templateList" class="list"></div>
           </div>
 
           <div class="card">
-            <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
-              <h3 class="h3">Template Builder</h3>
-              <div class="row gap8" style="flex-wrap:wrap;">
+            <div class="row space-between wrap gap8">
+              <div class="h3">Template Builder</div>
+              <div class="row gap8 wrap">
                 <button id="publishBtn" class="btn">Publish</button>
                 <button id="assignBtn" class="btn">Assign</button>
               </div>
             </div>
 
-            <div id="templateEditorEmpty" class="muted">Select a template to edit fields.</div>
+            <div id="templateEditorEmpty" class="muted small" style="margin-top:10px;">
+              Select a template.
+            </div>
 
-            <div id="templateEditor" class="hidden">
+            <div id="templateEditor" class="hidden" style="margin-top:10px;">
               <div class="form">
                 <label class="label">Template Name</label>
-                <input id="tplName" class="input" placeholder="उदा. साप्ताहिक अहवाल / Weekly Report" />
+                <input id="tplName" class="input" placeholder="Template name" />
 
-                <div class="row gap8 mt10" style="flex-wrap:wrap;">
+                <div class="row gap8 wrap" style="margin-top:10px;">
                   <button id="saveTplBtn" class="btn primary">Save</button>
                   <button id="deleteTplBtn" class="btn danger">Delete</button>
                 </div>
@@ -77,15 +69,12 @@
 
               <div class="divider"></div>
 
-              <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
-                <h4 class="h4">Fields / Columns</h4>
+              <div class="row space-between wrap gap8">
+                <div class="h3" style="margin:0;">Fields</div>
                 <button id="addFieldBtn" class="btn">+ Add Field</button>
               </div>
 
               <div id="fieldList" class="field-list"></div>
-
-              <div class="divider"></div>
-              <div class="small muted">Labels can be Marathi or English. District users can only fill values (cannot edit labels).</div>
             </div>
           </div>
         </div>
@@ -93,19 +82,15 @@
 
       <!-- Districts -->
       <section id="tab-districts" class="panel hidden">
-        <div class="panel-head">
-          <h2 class="h2">District Users</h2>
-        </div>
-
         <div class="grid two">
           <div class="card">
-            <h3 class="h3">Create District User</h3>
+            <div class="h3">Create District User</div>
             <div class="form">
-              <label class="label">Username (login)</label>
-              <input id="dUsername" class="input" placeholder="e.g. nandurbar" />
+              <label class="label">Username</label>
+              <input id="dUsername" class="input" placeholder="e.g. yavatmal" />
 
-              <label class="label">District Name (display)</label>
-              <input id="dName" class="input" placeholder="e.g. नंदुरबार / Nandurbar" />
+              <label class="label">District Name</label>
+              <input id="dName" class="input" placeholder="e.g. यवतमाळ / Yavatmal" />
 
               <label class="label">Password</label>
               <input id="dPassword" class="input" placeholder="set password" />
@@ -116,7 +101,7 @@
           </div>
 
           <div class="card">
-            <h3 class="h3">Existing Districts</h3>
+            <div class="h3">District List</div>
             <div id="districtList" class="list"></div>
           </div>
         </div>
@@ -124,32 +109,33 @@
 
       <!-- Submissions -->
       <section id="tab-submissions" class="panel hidden">
-        <div class="panel-head">
-          <h2 class="h2">Submissions</h2>
+        <div class="row space-between wrap gap8" style="margin-bottom:12px;">
+          <div class="h2">Submissions</div>
           <button id="refreshSubsBtn" class="btn">Refresh</button>
         </div>
 
         <div class="grid two">
           <div class="card">
-            <h3 class="h3">All Assigned Tables</h3>
+            <div class="h3">Assigned Tables</div>
             <div id="submissionList" class="list"></div>
           </div>
 
           <div class="card">
-            <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
-              <h3 class="h3">Submission Preview</h3>
-              <button id="unlockBtn" class="btn">Unlock (Admin)</button>
+            <div class="row space-between wrap gap8">
+              <div class="h3" style="margin:0;">Preview</div>
+              <button id="unlockBtn" class="btn">Unlock</button>
             </div>
-            <div id="submissionPreview" class="muted">Select a submission to preview.</div>
+            <div id="submissionPreview" class="muted small" style="margin-top:10px;">
+              Select a submission.
+            </div>
           </div>
         </div>
       </section>
 
     </main>
 
-    <!-- Modals -->
+    <!-- Modals (used by utils.js) -->
     <div id="modalBackdrop" class="modal-backdrop hidden"></div>
-
     <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-head">
         <div id="modalTitle" class="modal-title">Modal</div>

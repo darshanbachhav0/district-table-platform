@@ -13,7 +13,7 @@
         <div class="logo">DT</div>
         <div>
           <div class="brand-title">District Portal</div>
-          <div id="districtSubtitle" class="brand-sub">Fill assigned tables and send to Admin</div>
+          <div id="districtSubtitle" class="brand-sub">Tables</div>
         </div>
       </div>
 
@@ -24,35 +24,27 @@
     </header>
 
     <main class="container">
-      <section class="card" style="margin-bottom:14px;">
-        <div class="row space-between" style="gap:10px; flex-wrap:wrap;">
-          <div>
-            <div class="h2">District Submission</div>
-            <div class="muted small">Type in Marathi or English. Save draft anytime, then Send when ready.</div>
-          </div>
-          <span class="badge">UTF-8 • Marathi/English</span>
-        </div>
-      </section>
-
       <div class="grid two">
         <section class="card">
-          <h2 class="h2">Assigned Tables</h2>
+          <div class="h2">Assigned Tables</div>
           <div id="assignmentList" class="list"></div>
         </section>
 
         <section class="card">
-          <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
-            <h2 class="h2">Fill Table</h2>
-            <div class="row gap8" style="flex-wrap:wrap;">
-              <button id="saveDraftBtn" class="btn">Save Draft</button>
-              <button id="sendBtn" class="btn primary">Send to Admin</button>
+          <div class="row space-between wrap gap8">
+            <div class="h2">Fill Table</div>
+            <div class="row gap8 wrap">
+              <button id="saveDraftBtn" class="btn">Save</button>
+              <button id="sendBtn" class="btn primary">Send</button>
             </div>
           </div>
 
-          <div id="assignmentEmpty" class="muted">Select a table from the left.</div>
+          <div id="assignmentEmpty" class="muted small" style="margin-top:10px;">
+            Select a table.
+          </div>
 
-          <div id="assignmentEditor" class="hidden">
-            <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
+          <div id="assignmentEditor" class="hidden" style="margin-top:10px;">
+            <div class="row space-between wrap gap8">
               <div>
                 <div id="assignmentTitle" class="h3"></div>
                 <div id="assignmentStatus" class="small muted"></div>
@@ -63,15 +55,12 @@
             <div class="divider"></div>
             <div id="formFields" class="form"></div>
             <div id="districtMsg" class="msg"></div>
-
-            <div class="divider"></div>
-            <div class="small muted">मराठी किंवा English मध्ये माहिती टाईप करा.</div>
           </div>
         </section>
       </div>
     </main>
 
-    <!-- Modals -->
+    <!-- Modals (used by utils.js) -->
     <div id="modalBackdrop" class="modal-backdrop hidden"></div>
     <div id="modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-head">
