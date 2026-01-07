@@ -13,59 +13,35 @@
         <div class="logo">DT</div>
         <div>
           <div class="brand-title">District Table Platform</div>
-          <div class="brand-sub">Admin → District tables (Marathi + English)</div>
+          <div class="brand-sub">Admin → District Data Collection</div>
         </div>
       </div>
       <div class="topbar-actions">
-        <span class="badge">Secure • Role-based Access</span>
+        <span class="badge">Secure Access</span>
       </div>
     </header>
 
-    <main class="container">
-      <div class="auth-grid">
-        <section class="hero">
-          <h2>Fast, Clean & District-wise Data Collection</h2>
-          <div class="small muted">अमरावती ग्रामीण • अमरावती शहर • बुलढाणा • वाशिम • यवतमाळ • अकोला</div>
+    <main class="container auth-center">
+      <section class="card login-card">
+        <h1 class="h1">Login</h1>
+        <p class="muted">Sign in with your authorized credentials.</p>
 
-          <ul>
-            <li><b>Admin</b> creates table templates (fields/columns) and assigns them to districts.</li>
-            <li><b>District</b> can fill only their own assigned tables — cannot change field names.</li>
-            <li>Marathi/English typing supported (UTF-8). Use any system font — data stays correct.</li>
-            <li>After <b>Send</b>, the table locks until admin unlocks.</li>
-          </ul>
+        <form id="loginForm" class="form" autocomplete="on">
+          <label class="label" for="username">Username</label>
+          <input id="username" class="input" autocomplete="username" placeholder="Enter username" />
 
-          <div class="divider"></div>
-          <div class="small muted">
-            Tip: Use <span class="kbd">Tab</span> to move between fields quickly.
-          </div>
-        </section>
+          <label class="label" for="password">Password</label>
+          <input id="password" type="password" class="input" autocomplete="current-password" placeholder="Enter password" />
 
-        <section class="card">
-          <h1 class="h1">Login</h1>
-          <p class="muted">Enter your username and password. You will be redirected automatically.</p>
+          <button class="btn primary" type="submit">Sign in</button>
+          <div id="loginMsg" class="msg"></div>
+        </form>
 
-          <form id="loginForm" class="form">
-            <label class="label" for="username">Username</label>
-            <input id="username" class="input" autocomplete="username" placeholder="admin / amravati_rural / ..." />
-
-            <label class="label" for="password">Password</label>
-            <input id="password" type="password" class="input" autocomplete="current-password" placeholder="••••••••" />
-
-            <button class="btn primary" type="submit">Sign in</button>
-            <div id="loginMsg" class="msg"></div>
-          </form>
-
-          <div class="divider"></div>
-          <details class="details">
-            <summary class="small">Account help</summary>
-            <div class="small muted mt8">
-              <div><b>Admin</b> credentials are set via Render environment variables.</div>
-              <div class="mt8"><b>District</b> usernames: amravati_rural, amravati_city, buldhana, washim, yavatmal, akola</div>
-              <div class="mt8">Passwords are hidden for security. Ask admin.</div>
-            </div>
-          </details>
-        </section>
-      </div>
+        <div class="login-meta">
+          <span>मराठी + English supported</span>
+          <span class="muted">Contact Admin for access</span>
+        </div>
+      </section>
     </main>
   </div>
 

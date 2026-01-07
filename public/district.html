@@ -13,7 +13,7 @@
         <div class="logo">DT</div>
         <div>
           <div class="brand-title">District Portal</div>
-          <div id="districtSubtitle" class="brand-sub">Fill your assigned tables and send to admin</div>
+          <div id="districtSubtitle" class="brand-sub">Fill assigned tables and send to Admin</div>
         </div>
       </div>
 
@@ -24,37 +24,35 @@
     </header>
 
     <main class="container">
-      <div class="page-head">
-        <div>
-          <h1 class="page-title">District Submission</h1>
-          <div class="page-desc">Fill values in Marathi or English. Save draft anytime, then Send to Admin when ready.</div>
+      <section class="card" style="margin-bottom:14px;">
+        <div class="row space-between" style="gap:10px; flex-wrap:wrap;">
+          <div>
+            <div class="h2">District Submission</div>
+            <div class="muted small">Type in Marathi or English. Save draft anytime, then Send when ready.</div>
+          </div>
+          <span class="badge">UTF-8 • Marathi/English</span>
         </div>
-      </div>
+      </section>
 
       <div class="grid two">
         <section class="card">
           <h2 class="h2">Assigned Tables</h2>
-          <div class="small muted">Select a table to start filling.</div>
-          <div class="divider"></div>
           <div id="assignmentList" class="list"></div>
         </section>
 
         <section class="card">
-          <div class="row space-between wrap gap10">
-            <div>
-              <h2 class="h2">Fill Table</h2>
-              <div class="small muted">After you Send, editing is locked until admin unlocks.</div>
-            </div>
-            <div class="row gap8 wrap">
+          <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
+            <h2 class="h2">Fill Table</h2>
+            <div class="row gap8" style="flex-wrap:wrap;">
               <button id="saveDraftBtn" class="btn">Save Draft</button>
               <button id="sendBtn" class="btn primary">Send to Admin</button>
             </div>
           </div>
 
-          <div id="assignmentEmpty" class="muted mt10">Select a table from the left.</div>
+          <div id="assignmentEmpty" class="muted">Select a table from the left.</div>
 
           <div id="assignmentEditor" class="hidden">
-            <div class="row space-between wrap gap10">
+            <div class="row space-between" style="flex-wrap:wrap; gap:10px;">
               <div>
                 <div id="assignmentTitle" class="h3"></div>
                 <div id="assignmentStatus" class="small muted"></div>
@@ -67,14 +65,11 @@
             <div id="districtMsg" class="msg"></div>
 
             <div class="divider"></div>
-            <div class="small muted">मराठी किंवा English मध्ये माहिती टाईप करा. (You can type in Marathi or English.)</div>
+            <div class="small muted">मराठी किंवा English मध्ये माहिती टाईप करा.</div>
           </div>
         </section>
       </div>
     </main>
-
-    <!-- Toast container -->
-    <div id="toastStack" class="toast-stack"></div>
 
     <!-- Modals -->
     <div id="modalBackdrop" class="modal-backdrop hidden"></div>
