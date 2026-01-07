@@ -9,11 +9,28 @@ const { authMiddleware } = require("./auth");
 const routes = require("./routes");
 
 const PORT = process.env.PORT || 8080;
-const JWT_SECRET = process.env.JWT_SECRET || "change_this_secret";
+
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return String(v);
+}
+
+// Secrets / credentials MUST come from environment variables (Render → Environment)
+const JWT_SECRET = requireEnv("JWT_SECRET");
+const ADMIN_USERNAME = requireEnv("ADMIN_USERNAME");
+const ADMIN_PASSWORD = requireEnv("ADMIN_PASSWORD");
+const DISTRICT_DEFAULT_PASSWORD = requireEnv("DISTRICT_DEFAULT_PASSWORD");
 
 async function main(){
   await init();
-  await seed();
+  await seed({
+    adminUsername: ADMIN_USERNAME,
+    adminPassword: ADMIN_PASSWORD,
+    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
+  });
 
   const app = express();
   app.use(cors());
@@ -22,6 +39,9 @@ async function main(){
   // Static frontend
   const publicDir = path.join(__dirname, "..", "..", "public");
   app.use(express.static(publicDir));
+
+  // Make config available to routes
+  app.locals.JWT_SECRET = JWT_SECRET;
 
   // Health
   app.get("/api/health", (_, res) => res.json({ ok: true }));
@@ -39,8 +59,7 @@ async function main(){
   app.get("*", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
   app.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-    console.log("Admin login: admin / admin123");
+    console.log(`Server running on port ${PORT}`);
   });
 }
 

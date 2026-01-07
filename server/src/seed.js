@@ -13,9 +13,15 @@ async function ensureUser({ username, password, role, district_name }) {
   return r.id;
 }
 
-async function seed() {
+async function seed({ adminUsername, adminPassword, districtDefaultPassword }) {
+  if (!adminUsername || !adminPassword || !districtDefaultPassword) {
+    throw new Error(
+      "seed() missing required credentials. Provide ADMIN_USERNAME, ADMIN_PASSWORD, DISTRICT_DEFAULT_PASSWORD in environment."
+    );
+  }
+
   // Admin
-  await ensureUser({ username: "admin", password: "admin123", role: "admin" });
+  await ensureUser({ username: adminUsername, password: adminPassword, role: "admin" });
 
   // Default districts
   const defaults = [
@@ -27,7 +33,7 @@ async function seed() {
     ["akola", "अकोला / Akola"],
   ];
   for (const [u, name] of defaults) {
-    await ensureUser({ username: u, password: "district123", role: "district", district_name: name });
+    await ensureUser({ username: u, password: districtDefaultPassword, role: "district", district_name: name });
   }
 }
 

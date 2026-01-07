@@ -18,17 +18,25 @@ function slugKey(label) {
 
 // Public: login
 router.post("/login", async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: "Username and password required." });
+  try {
+    const { username, password } = req.body || {};
+    if (!username || !password) return res.status(400).json({ error: "Username and password required." });
 
-  const user = await get("SELECT * FROM users WHERE username = ?", [username]);
-  if (!user) return res.status(401).json({ error: "Invalid credentials." });
+    const user = await get("SELECT * FROM users WHERE username = ?", [username]);
+    if (!user) return res.status(401).json({ error: "Invalid credentials." });
 
-  const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: "Invalid credentials." });
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if (!ok) return res.status(401).json({ error: "Invalid credentials." });
 
-  const token = signToken(user, process.env.JWT_SECRET);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role, district_name: user.district_name || null } });
+    const secret = req.app?.locals?.JWT_SECRET;
+    if (!secret) return res.status(500).json({ error: "Server misconfigured: missing JWT secret." });
+
+    const token = signToken(user, secret);
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, district_name: user.district_name || null } });
+  } catch (e) {
+    console.error("Login failed:", e);
+    return res.status(500).json({ error: "Login failed. Check server logs." });
+  }
 });
 
 // Auth: me
