@@ -35,6 +35,16 @@ async function main(){
 
   const app = express();
 
+  app.disable("etag"); // stops 304 for API in most cases
+
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
+
   // ✅ CORS (Allow same-origin + future cookie support)
   app.use(cors({
     origin: true,
