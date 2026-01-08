@@ -79,6 +79,7 @@ router.post("/admin/templates", requireRole("admin"), async (req, res) => {
 
 router.get("/admin/templates/:id", requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid template id." });
   const tpl = await store.getTemplateDetail(id);
   if (!tpl) return res.status(404).json({ error: "Template not found." });
   res.json(tpl);
@@ -86,6 +87,7 @@ router.get("/admin/templates/:id", requireRole("admin"), async (req, res) => {
 
 router.put("/admin/templates/:id", requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid template id." });
   const { name } = req.body || {};
   if (!name) return res.status(400).json({ error: "name required." });
   await store.updateTemplate(id, { name });
@@ -94,12 +96,14 @@ router.put("/admin/templates/:id", requireRole("admin"), async (req, res) => {
 
 router.delete("/admin/templates/:id", requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid template id." });
   await store.deleteTemplateCascade(id);
   res.json({ ok: true });
 });
 
 router.post("/admin/templates/:id/fields", requireRole("admin"), async (req, res) => {
   const template_id = Number(req.params.id);
+  if (!Number.isFinite(template_id)) return res.status(400).json({ error: "Invalid template id." });
   const tpl = await store.getTemplateById(template_id);
   if (!tpl) return res.status(404).json({ error: "Template not found." });
 
@@ -131,6 +135,7 @@ router.delete("/admin/fields/:id", requireRole("admin"), async (req, res) => {
 
 router.post("/admin/templates/:id/publish", requireRole("admin"), async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: "Invalid template id." });
   await store.publishTemplate(id);
   res.json({ ok: true });
 });
@@ -138,6 +143,7 @@ router.post("/admin/templates/:id/publish", requireRole("admin"), async (req, re
 router.post("/admin/templates/:id/assign", requireRole("admin"), async (req, res) => {
   try{
     const template_id = Number(req.params.id);
+    if (!Number.isFinite(template_id)) return res.status(400).json({ error: "Invalid template id." });
     const { districtUserIds } = req.body || {};
     if (!Array.isArray(districtUserIds) || !districtUserIds.length) {
       return res.status(400).json({ error: "districtUserIds required." });

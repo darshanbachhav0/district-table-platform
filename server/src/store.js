@@ -13,13 +13,70 @@ function slugKey(label) {
 
 function col(name){ return db().collection(name); }
 
-async function nextId(counterName){
+async function getMaxNumericId(collectionName){
+  if (!collectionName) return 0;
+
+  const rows = await col(collectionName)
+    .aggregate([
+      { $match: { id: { $exists: true } } },
+      // keep only numeric BSON types
+      { $match: { $expr: { $in: [ { $type: "$id" }, ["int","long","double","decimal"] ] } } },
+      // filter out NaN (because NaN !== NaN)
+      { $match: { $expr: { $eq: ["$id", "$id"] } } },
+      { $group: { _id: null, maxId: { $max: "$id" } } }
+    ])
+    .toArray();
+
+  const maxId = rows[0]?.maxId;
+  return Number.isFinite(maxId) ? Number(maxId) : 0;
+}
+
+async function ensureCounterHealthy(counterName, collectionName){
+  const c = await col("_counters").findOne({ _id: counterName });
+  const raw = c?.value;
+
+  // Detect corrupted counters (undefined, null, NaN, non-numeric string, etc.)
+  const num = typeof raw === "number" ? raw : Number(raw);
+  if (Number.isFinite(num)) return;
+
+  const base = await getMaxNumericId(collectionName);
+  await col("_counters").updateOne(
+    { _id: counterName },
+    { $set: { value: base } },
+    { upsert: true }
+  );
+}
+
+async function nextId(counterName, collectionName){
+  // Self-heal counter if it was corrupted (common when value becomes NaN)
+  await ensureCounterHealthy(counterName, collectionName);
+
   const res = await col("_counters").findOneAndUpdate(
     { _id: counterName },
     { $inc: { value: 1 } },
     { upsert: true, returnDocument: "after" }
   );
-  return Number(res.value.value);
+
+  const out = Number(res?.value?.value);
+
+  if (!Number.isFinite(out)) {
+    // One last attempt: repair and retry
+    await ensureCounterHealthy(counterName, collectionName);
+
+    const res2 = await col("_counters").findOneAndUpdate(
+      { _id: counterName },
+      { $inc: { value: 1 } },
+      { upsert: true, returnDocument: "after" }
+    );
+
+    const out2 = Number(res2?.value?.value);
+    if (!Number.isFinite(out2)) {
+      throw new Error(`Counter '${counterName}' is corrupted (value=${String(res2?.value?.value)}).`);
+    }
+    return out2;
+  }
+
+  return out;
 }
 
 async function ensureIndexes(){
@@ -47,7 +104,7 @@ async function getUserPublicById(id){
 }
 
 async function createUser({ username, password_hash, role, district_name }){
-  const id = await nextId("users");
+  const id = await nextId("users", "users");
   await col("users").insertOne({
     id,
     username: String(username),
@@ -58,12 +115,12 @@ async function createUser({ username, password_hash, role, district_name }){
   return id;
 }
 
-async function listUsers({ role } = {}){
+async function listUsers(filter={}){
   const q = {};
-  if (role) q.role = role;
+  if (filter.role) q.role = filter.role;
   const rows = await col("users")
-    .find(q, { projection: { _id: 0, id: 1, username: 1, role: 1, district_name: 1 } })
-    .sort({ id: -1 })
+    .find(q, { projection: { _id: 0, password_hash: 0 } })
+    .sort({ role: 1, username: 1 })
     .toArray();
   return rows;
 }
@@ -73,6 +130,9 @@ async function listUsers({ role } = {}){
 async function listTemplates(){
   const rows = await col("templates")
     .aggregate([
+      // hide corrupted templates (id=NaN becomes null in JSON)
+      { $match: { $expr: { $in: [ { $type: "$id" }, ["int","long","double","decimal"] ] } } },
+      { $match: { $expr: { $eq: ["$id", "$id"] } } },
       { $lookup: { from: "fields", localField: "id", foreignField: "template_id", as: "fields" } },
       { $addFields: { field_count: { $size: "$fields" } } },
       { $project: { _id: 0, fields: 0 } },
@@ -83,7 +143,7 @@ async function listTemplates(){
 }
 
 async function createTemplate({ name, created_by }){
-  const id = await nextId("templates");
+  const id = await nextId("templates", "templates");
   const ts = nowISO();
   await col("templates").insertOne({
     id,
@@ -97,21 +157,12 @@ async function createTemplate({ name, created_by }){
 }
 
 async function getTemplateById(id){
-  return await col("templates").findOne({ id: Number(id) }, { projection: { _id: 0 } });
-}
-
-async function updateTemplate(id, { name }){
-  await col("templates").updateOne(
-    { id: Number(id) },
-    { $set: { name: String(name), updated_at: nowISO() } }
+  id = Number(id);
+  const tpl = await col("templates").findOne(
+    { id },
+    { projection: { _id: 0 } }
   );
-}
-
-async function publishTemplate(id){
-  await col("templates").updateOne(
-    { id: Number(id) },
-    { $set: { published: true, updated_at: nowISO() } }
-  );
+  return tpl || null;
 }
 
 async function getTemplateDetail(id){
@@ -128,19 +179,21 @@ async function getTemplateDetail(id){
   };
 }
 
+async function updateTemplate(id, patch){
+  id = Number(id);
+  const ts = nowISO();
+  await col("templates").updateOne(
+    { id },
+    { $set: { name: String(patch.name), updated_at: ts } }
+  );
+}
+
 async function deleteTemplateCascade(template_id){
   template_id = Number(template_id);
-
-  const assignmentDocs = await col("assignments").find({ template_id }, { projection: { _id: 0, id: 1 } }).toArray();
-  const assignmentIds = assignmentDocs.map(a => a.id);
-
-  if (assignmentIds.length){
-    await col("values_kv").deleteMany({ assignment_id: { $in: assignmentIds } });
-  }
-
-  await col("assignments").deleteMany({ template_id });
-  await col("fields").deleteMany({ template_id });
   await col("templates").deleteOne({ id: template_id });
+  await col("fields").deleteMany({ template_id });
+  await col("assignments").deleteMany({ template_id });
+  // values_kv is by assignment_id; assignments removed so orphan cleanup optional
 }
 
 /* ================= FIELDS ================= */
@@ -159,8 +212,9 @@ async function addField({ template_id, label, type, required }){
   const order_index = (last[0]?.order_index || 0) + 1;
 
   let key = slugKey(label);
-  const id = await nextId("fields");
+  const id = await nextId("fields", "fields");
 
+  // Enforce uniqueness per template (index also exists)
   try{
     await col("fields").insertOne({
       id,
@@ -173,7 +227,7 @@ async function addField({ template_id, label, type, required }){
       order_index
     });
   }catch(e){
-    // duplicate key
+    // If key collision occurs, retry with suffix
     key = key + "_" + Math.random().toString(36).slice(2,5);
     await col("fields").insertOne({
       id,
@@ -191,157 +245,71 @@ async function addField({ template_id, label, type, required }){
 }
 
 async function getFieldById(id){
-  return await col("fields").findOne({ id: Number(id) }, { projection: { _id: 0 } });
+  const f = await col("fields").findOne({ id: Number(id) }, { projection: { _id: 0 } });
+  return f || null;
 }
 
-async function updateField(id, { label, type, required, options }){
-  const f = await getFieldById(id);
-  if (!f) return;
+async function updateField(id, patch){
+  id = Number(id);
+  const $set = {};
+  if (patch.label != null) $set.label = String(patch.label);
+  if (patch.type != null) $set.type = String(patch.type);
+  if (patch.required != null) $set.required = !!patch.required;
+  if (patch.options != null) $set.options = Array.isArray(patch.options) ? patch.options : [];
 
-  const validTypes = ["text","textarea","number","date","select"];
-  const patch = {};
-
-  if (label !== undefined) patch.label = String(label);
-  if (type !== undefined) patch.type = validTypes.includes(type) ? type : f.type;
-  if (required !== undefined) patch.required = !!required;
-  if (options !== undefined) patch.options = Array.isArray(options) ? options : [];
-
-  await col("fields").updateOne({ id: Number(id) }, { $set: patch });
-  await col("templates").updateOne({ id: f.template_id }, { $set: { updated_at: nowISO() } });
+  await col("fields").updateOne({ id }, { $set });
 }
 
 async function deleteField(id){
-  const f = await getFieldById(id);
-  if (!f) return;
-  await col("fields").deleteOne({ id: Number(id) });
-  await col("templates").updateOne({ id: f.template_id }, { $set: { updated_at: nowISO() } });
+  id = Number(id);
+  const f = await col("fields").findOne({ id }, { projection: { _id: 0, template_id: 1 } });
+  await col("fields").deleteOne({ id });
+  if (f?.template_id != null) {
+    await col("templates").updateOne({ id: f.template_id }, { $set: { updated_at: nowISO() } });
+  }
 }
 
-/* ================= ASSIGNMENTS / VALUES ================= */
+/* ================= ASSIGNMENTS / SUBMISSIONS ================= */
 
 async function assignTemplateToDistricts(template_id, districtUserIds){
   template_id = Number(template_id);
 
+  // prevent assignment of unpublished templates
   const tpl = await getTemplateById(template_id);
-  if (!tpl) throw new Error("Template not found.");
+  if (!tpl) {
+    const err = new Error("Template not found.");
+    err.status = 404;
+    throw err;
+  }
   if (!tpl.published) {
-    const err = new Error("Publish the template before assigning.");
+    const err = new Error("Template must be published before assignment.");
     err.status = 400;
     throw err;
   }
 
-  const fields = await col("fields")
-    .find({ template_id }, { projection: { _id: 0, field_key: 1 } })
-    .toArray();
-
-  const fieldKeys = fields.map(f => f.field_key);
   const ts = nowISO();
 
-  for (const uid of districtUserIds) {
-    const user = await col("users").findOne({ id: Number(uid), role: "district" }, { projection: { _id: 0, id: 1 } });
-    if (!user) continue;
+  for (const uid of districtUserIds.map(Number)) {
+    // upsert assignment
+    const existing = await col("assignments").findOne({ template_id, district_user_id: uid });
+    if (existing) continue;
 
-    const existing = await col("assignments").findOne({ template_id, district_user_id: Number(uid) }, { projection: { _id: 0, id: 1 } });
-
-    let assignmentId;
-    if (existing) {
-      assignmentId = existing.id;
-      await col("assignments").updateOne({ id: assignmentId }, { $set: { updated_at: ts } });
-    } else {
-      assignmentId = await nextId("assignments");
-      await col("assignments").insertOne({
-        id: assignmentId,
-        template_id,
-        district_user_id: Number(uid),
-        status: "draft",
-        sent_at: null,
-        created_at: ts,
-        updated_at: ts
-      });
-    }
-
-    if (fieldKeys.length){
-      const ops = fieldKeys.map(k => ({
-        updateOne: {
-          filter: { assignment_id: assignmentId, field_key: k },
-          update: { $setOnInsert: { id: 0, assignment_id: assignmentId, field_key: k, value: "", updated_at: ts } },
-          upsert: true
-        }
-      }));
-
-      await col("values_kv").bulkWrite(ops, { ordered: false });
-
-      // Fix any inserted docs id=0 to real IDs (only for the new inserts in this batch)
-      // Simple approach: ensure every value has id:
-      const missingId = await col("values_kv").find({ assignment_id: assignmentId, id: 0 }, { projection: { _id: 1 } }).toArray();
-      for (const d of missingId){
-        const newId = await nextId("values_kv");
-        await col("values_kv").updateOne({ _id: d._id }, { $set: { id: newId } });
-      }
-    }
+    const id = await nextId("assignments", "assignments");
+    await col("assignments").insertOne({
+      id,
+      template_id,
+      district_user_id: uid,
+      status: "draft",
+      sent_at: null,
+      created_at: ts,
+      updated_at: ts
+    });
   }
 }
 
-async function listSubmissions(){
-  const rows = await col("assignments").aggregate([
-    { $lookup: { from: "templates", localField: "template_id", foreignField: "id", as: "t" } },
-    { $lookup: { from: "users", localField: "district_user_id", foreignField: "id", as: "u" } },
-    { $unwind: "$t" },
-    { $unwind: "$u" },
-    {
-      $project: {
-        _id: 0,
-        id: 1,
-        status: 1,
-        sent_at: 1,
-        updated_at: 1,
-        template_name: "$t.name",
-        district_username: "$u.username",
-        district_name: { $ifNull: ["$u.district_name", "$u.username"] }
-      }
-    },
-    { $sort: { updated_at: -1 } }
-  ]).toArray();
-
-  return rows;
-}
-
-async function getSubmissionDetail(assignment_id){
-  assignment_id = Number(assignment_id);
-
-  const a = await col("assignments").findOne({ id: assignment_id });
-  if (!a) return null;
-
-  const t = await getTemplateById(a.template_id);
-  const u = await col("users").findOne({ id: a.district_user_id }, { projection: { _id: 0, username: 1, district_name: 1 } });
-
-  const fields = await col("fields")
-    .find({ template_id: a.template_id }, { projection: { _id: 0, field_key: 1, label: 1, order_index: 1, id: 1 } })
-    .sort({ order_index: 1, id: 1 })
-    .toArray();
-
-  const values = await col("values_kv")
-    .find({ assignment_id }, { projection: { _id: 0, field_key: 1, value: 1 } })
-    .toArray();
-
-  const vmap = new Map(values.map(v => [v.field_key, v.value]));
-
-  return {
-    id: a.id,
-    status: a.status,
-    sent_at: a.sent_at,
-    updated_at: a.updated_at,
-    template_name: t?.name || "",
-    district_name: (u?.district_name || u?.username || ""),
-    values: fields.map(f => ({ field_key: f.field_key, label: f.label, value: vmap.get(f.field_key) ?? "" }))
-  };
-}
-
-async function unlockSubmission(assignment_id){
-  await col("assignments").updateOne(
-    { id: Number(assignment_id) },
-    { $set: { status: "draft", sent_at: null, updated_at: nowISO() } }
-  );
+async function publishTemplate(id){
+  id = Number(id);
+  await col("templates").updateOne({ id }, { $set: { published: true, updated_at: nowISO() } });
 }
 
 async function listDistrictAssignments(district_user_id){
@@ -350,7 +318,16 @@ async function listDistrictAssignments(district_user_id){
     { $match: { district_user_id } },
     { $lookup: { from: "templates", localField: "template_id", foreignField: "id", as: "t" } },
     { $unwind: "$t" },
-    { $project: { _id: 0, id: 1, status: 1, sent_at: 1, updated_at: 1, template_name: "$t.name" } },
+    {
+      $project: {
+        _id: 0,
+        id: 1,
+        status: 1,
+        sent_at: 1,
+        updated_at: 1,
+        template: { id: "$t.id", name: "$t.name", published: "$t.published" }
+      }
+    },
     { $sort: { updated_at: -1 } }
   ]).toArray();
   return rows;
@@ -360,27 +337,33 @@ async function getDistrictAssignmentDetail(assignment_id, district_user_id){
   assignment_id = Number(assignment_id);
   district_user_id = Number(district_user_id);
 
-  const a = await col("assignments").findOne({ id: assignment_id, district_user_id });
+  const a = await col("assignments").findOne({ id: assignment_id, district_user_id }, { projection: { _id: 0 } });
   if (!a) return null;
 
-  const t = await getTemplateById(a.template_id);
-  const fields = await col("fields")
-    .find({ template_id: a.template_id }, { projection: { _id: 0 } })
-    .sort({ order_index: 1, id: 1 })
-    .toArray();
+  const tpl = await getTemplateDetail(a.template_id);
+  if (!tpl) return null;
 
-  const values = await col("values_kv")
-    .find({ assignment_id }, { projection: { _id: 0, field_key: 1, value: 1 } })
-    .toArray();
+  const values = await col("values_kv").find(
+    { assignment_id },
+    { projection: { _id: 0, field_key: 1, value: 1 } }
+  ).toArray();
+
+  const vmap = new Map(values.map(v => [v.field_key, v.value]));
 
   return {
     id: a.id,
-    template_name: t?.name || "",
     status: a.status,
     sent_at: a.sent_at,
     updated_at: a.updated_at,
-    fields: fields.map(f => ({ ...f, required: !!f.required, options: Array.isArray(f.options) ? f.options : [] })),
-    values
+    template: tpl,
+    values: tpl.fields.map(f => ({
+      field_key: f.field_key,
+      label: f.label,
+      type: f.type,
+      required: !!f.required,
+      options: Array.isArray(f.options) ? f.options : [],
+      value: vmap.get(f.field_key) ?? ""
+    }))
   };
 }
 
@@ -388,38 +371,32 @@ async function saveDistrictValues(assignment_id, district_user_id, values){
   assignment_id = Number(assignment_id);
   district_user_id = Number(district_user_id);
 
-  const a = await col("assignments").findOne({ id: assignment_id, district_user_id });
+  const a = await col("assignments").findOne({ id: assignment_id, district_user_id }, { projection: { _id: 0 } });
   if (!a) return { ok: false, status: 404, error: "Assignment not found." };
   if (a.status === "sent") return { ok: false, status: 400, error: "Already sent. Ask admin to unlock." };
 
-  const ts = nowISO();
-  const ops = [];
+  const tpl = await getTemplateDetail(a.template_id);
+  if (!tpl) return { ok: false, status: 404, error: "Template not found." };
 
+  const fields = tpl.fields;
+
+  // Upsert values
   for (const v of values) {
-    if (!v.field_key) continue;
-    ops.push({
-      updateOne: {
-        filter: { assignment_id, field_key: String(v.field_key) },
-        update: {
-          $set: { value: String(v.value ?? ""), updated_at: ts },
-          $setOnInsert: { id: 0, assignment_id, field_key: String(v.field_key) }
-        },
-        upsert: true
-      }
-    });
+    const key = String(v.field_key || "");
+    const val = (v.value ?? "").toString();
+
+    const f = fields.find(x => x.field_key === key);
+    if (!f) continue;
+
+    await col("values_kv").updateOne(
+      { assignment_id, field_key: key },
+      { $set: { value: val, updated_at: nowISO() }, $setOnInsert: { id: await nextId("values_kv", "values_kv"), created_at: nowISO() } },
+      { upsert: true }
+    );
   }
 
-  if (ops.length) {
-    await col("values_kv").bulkWrite(ops, { ordered: false });
+  await col("assignments").updateOne({ id: assignment_id }, { $set: { updated_at: nowISO() } });
 
-    const missingId = await col("values_kv").find({ assignment_id, id: 0 }, { projection: { _id: 1 } }).toArray();
-    for (const d of missingId){
-      const newId = await nextId("values_kv");
-      await col("values_kv").updateOne({ _id: d._id }, { $set: { id: newId } });
-    }
-  }
-
-  await col("assignments").updateOne({ id: assignment_id }, { $set: { updated_at: ts } });
   return { ok: true };
 }
 
@@ -427,14 +404,14 @@ async function sendDistrictSubmission(assignment_id, district_user_id){
   assignment_id = Number(assignment_id);
   district_user_id = Number(district_user_id);
 
-  const a = await col("assignments").findOne({ id: assignment_id, district_user_id });
+  const a = await col("assignments").findOne({ id: assignment_id, district_user_id }, { projection: { _id: 0 } });
   if (!a) return { ok: false, status: 404, error: "Assignment not found." };
   if (a.status === "sent") return { ok: false, status: 400, error: "Already sent." };
 
-  const fields = await col("fields")
-    .find({ template_id: a.template_id }, { projection: { _id: 0, field_key: 1, label: 1, required: 1, order_index: 1, id: 1 } })
-    .sort({ order_index: 1, id: 1 })
-    .toArray();
+  const tpl = await getTemplateDetail(a.template_id);
+  if (!tpl) return { ok: false, status: 404, error: "Template not found." };
+
+  const fields = tpl.fields;
 
   const values = await col("values_kv").find({ assignment_id }, { projection: { _id: 0, field_key: 1, value: 1 } }).toArray();
   const vmap = new Map(values.map(v => [v.field_key, (v.value ?? "").trim()]));
@@ -450,43 +427,91 @@ async function sendDistrictSubmission(assignment_id, district_user_id){
     { $set: { status: "sent", sent_at: ts, updated_at: ts } }
   );
 
-  const t = await getTemplateById(a.template_id);
-  const u = await col("users").findOne({ id: district_user_id }, { projection: { _id: 0, username: 1, district_name: 1 } });
-
-  const rows = fields.map(f => ({ label: f.label, value: vmap.get(f.field_key) || "" }));
+  const district = await getUserPublicById(district_user_id);
 
   return {
     ok: true,
-    district_name: (u?.district_name || u?.username || ""),
-    template_name: (t?.name || ""),
+    district_name: district?.district_name || district?.username || "District",
+    template_name: tpl.name,
     sent_at: ts,
-    rows
+    rows: fields.map(f => ({ label: f.label, value: vmap.get(f.field_key) || "" }))
   };
 }
 
-function escapeHtml(s){
-  return String(s ?? "").replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+async function listSubmissions(){
+  const rows = await col("assignments").aggregate([
+    { $lookup: { from: "templates", localField: "template_id", foreignField: "id", as: "t" } },
+    { $lookup: { from: "users", localField: "district_user_id", foreignField: "id", as: "u" } },
+    { $unwind: "$t" },
+    { $unwind: "$u" },
+    {
+      $project: {
+        _id: 0,
+        id: 1,
+        status: 1,
+        sent_at: 1,
+        updated_at: 1,
+        template: { id: "$t.id", name: "$t.name" },
+        district: { id: "$u.id", username: "$u.username", district_name: "$u.district_name" }
+      }
+    },
+    { $sort: { updated_at: -1 } }
+  ]).toArray();
+  return rows;
 }
 
-function buildSubmissionEmailHtml({ districtName, templateName, sentAt, rows }) {
+async function getSubmissionDetail(assignment_id){
+  assignment_id = Number(assignment_id);
+
+  const a = await col("assignments").findOne({ id: assignment_id }, { projection: { _id: 0 } });
+  if (!a) return null;
+
+  const tpl = await getTemplateDetail(a.template_id);
+  const district = await getUserPublicById(a.district_user_id);
+
+  const values = await col("values_kv").find({ assignment_id }, { projection: { _id: 0, field_key: 1, value: 1 } }).toArray();
+  const vmap = new Map(values.map(v => [v.field_key, v.value]));
+
+  return {
+    id: a.id,
+    status: a.status,
+    sent_at: a.sent_at,
+    updated_at: a.updated_at,
+    template: tpl ? { id: tpl.id, name: tpl.name } : null,
+    district,
+    values: tpl?.fields?.map(f => ({
+      label: f.label,
+      value: vmap.get(f.field_key) ?? ""
+    })) || []
+  };
+}
+
+async function unlockSubmission(assignment_id){
+  await col("assignments").updateOne(
+    { id: Number(assignment_id) },
+    { $set: { status: "draft", sent_at: null, updated_at: nowISO() } }
+  );
+}
+
+function buildSubmissionEmailHtml({ districtName, templateName, sentAt, rows }){
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+  }[c]));
+  const tableRows = rows.map(r => `<tr><td style="padding:6px 10px;border:1px solid #ddd;"><b>${esc(r.label)}</b></td><td style="padding:6px 10px;border:1px solid #ddd;">${esc(r.value)}</td></tr>`).join("");
   return `
-    <div style="font-family: Arial, sans-serif; line-height:1.4">
-      <h2>District Submission</h2>
-      <p><b>District:</b> ${escapeHtml(districtName)}</p>
-      <p><b>Template:</b> ${escapeHtml(templateName)}</p>
-      <p><b>Sent at:</b> ${escapeHtml(sentAt)}</p>
-      <table border="1" cellpadding="8" cellspacing="0" style="border-collapse:collapse">
-        <thead><tr><th align="left">Field</th><th align="left">Value</th></tr></thead>
-        <tbody>
-          ${rows.map(r => `<tr><td>${escapeHtml(r.label)}</td><td>${escapeHtml(r.value)}</td></tr>`).join("")}
-        </tbody>
-      </table>
+    <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;">
+      <h2>New Submission</h2>
+      <p><b>District:</b> ${esc(districtName)}</p>
+      <p><b>Template:</b> ${esc(templateName)}</p>
+      <p><b>Sent at:</b> ${esc(sentAt)}</p>
+      <table style="border-collapse:collapse;border:1px solid #ddd;">${tableRows}</table>
     </div>
   `;
 }
 
 module.exports = {
   ensureIndexes,
+
   getUserByUsername,
   getUserPublicById,
   createUser,
@@ -495,9 +520,8 @@ module.exports = {
   listTemplates,
   createTemplate,
   getTemplateById,
-  updateTemplate,
-  publishTemplate,
   getTemplateDetail,
+  updateTemplate,
   deleteTemplateCascade,
 
   addField,
@@ -505,15 +529,17 @@ module.exports = {
   updateField,
   deleteField,
 
+  publishTemplate,
   assignTemplateToDistricts,
-  listSubmissions,
-  getSubmissionDetail,
-  unlockSubmission,
 
   listDistrictAssignments,
   getDistrictAssignmentDetail,
   saveDistrictValues,
   sendDistrictSubmission,
 
-  buildSubmissionEmailHtml
+  listSubmissions,
+  getSubmissionDetail,
+  unlockSubmission,
+
+  buildSubmissionEmailHtml,
 };
