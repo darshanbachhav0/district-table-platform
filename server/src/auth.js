@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { get } = require("./db");
+const store = require("./store");
 
 function signToken(user, secret) {
   return jwt.sign(
@@ -17,12 +17,12 @@ function authMiddleware(secret) {
       if (!token) return res.status(401).json({ error: "Not authenticated." });
 
       const payload = jwt.verify(token, secret);
-      const user = await get("SELECT id, username, role, district_name FROM users WHERE id = ?", [payload.id]);
+      const user = await store.getUserPublicById(payload.id);
       if (!user) return res.status(401).json({ error: "Invalid user." });
 
       req.user = user;
       next();
-    } catch (e) {
+    } catch {
       return res.status(401).json({ error: "Invalid token." });
     }
   };

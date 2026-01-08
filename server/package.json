@@ -1,10 +1,10 @@
 {
   "name": "district-table-platform-server",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "main": "src/index.js",
   "type": "commonjs",
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "nodemon src/index.js",
@@ -16,8 +16,8 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.15",
-    "sqlite3": "^5.1.7"
+    "mongodb": "^6.10.0",
+    "nodemailer": "^6.9.15"
   },
   "devDependencies": {
     "nodemon": "^3.1.4"
