@@ -1,28 +1,46 @@
 const jwt = require("jsonwebtoken");
-const store = require("./store");
+
+/**
+ * Works for both Mongo + SQLite versions.
+ * We no longer query DB in middleware (prevents DB mismatch bugs).
+ * Token itself carries the user identity/role.
+ */
 
 function signToken(user, secret) {
+  const id = user.id ?? (user._id ? String(user._id) : null);
+
   return jwt.sign(
-    { id: user.id, role: user.role, username: user.username, district_name: user.district_name || null },
+    {
+      id,
+      role: user.role,
+      username: user.username,
+      district_name: user.district_name || null,
+    },
     secret,
     { expiresIn: "7d" }
   );
 }
 
 function authMiddleware(secret) {
-  return async (req, res, next) => {
+  return (req, res, next) => {
     try {
       const hdr = req.headers.authorization || "";
       const token = hdr.startsWith("Bearer ") ? hdr.slice(7) : null;
+
       if (!token) return res.status(401).json({ error: "Not authenticated." });
 
       const payload = jwt.verify(token, secret);
-      const user = await store.getUserPublicById(payload.id);
-      if (!user) return res.status(401).json({ error: "Invalid user." });
 
-      req.user = user;
-      next();
-    } catch {
+      // Trust token payload (no DB query here)
+      req.user = {
+        id: payload.id,
+        username: payload.username,
+        role: payload.role,
+        district_name: payload.district_name || null,
+      };
+
+      return next();
+    } catch (e) {
       return res.status(401).json({ error: "Invalid token." });
     }
   };
