@@ -37,6 +37,10 @@
 
   function pill(text){ return el("span", { class:"pill" }, text); }
 
+  function getSelectedTemplateSummary(){
+    return templates.find(t => t.id === selectedTemplateId) || null;
+  }
+
   async function loadTemplates(){
     templates = await API.request("/api/admin/templates");
     renderTemplateList();
@@ -153,12 +157,16 @@
     );
 
     const saveBtn = el("button", { class:"btn primary", onclick: async () => {
-      const options = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
-      await API.request(`/api/admin/fields/${field.id}`, { method:"PUT", body:{ options } });
-      document.getElementById("modalClose").click();
-      await selectTemplate(selectedTemplateId, true);
-      await loadTemplates();
-      toast("Options saved ✅", "ok");
+      try{
+        const options = ta.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+        await API.request(`/api/admin/fields/${field.id}`, { method:"PUT", body:{ options } });
+        document.getElementById("modalClose").click();
+        await selectTemplate(selectedTemplateId, true);
+        await loadTemplates();
+        toast("Options saved ✅", "ok");
+      }catch(e){
+        toast(e.message || "Failed to save options", "err");
+      }
     }}, "Save");
 
     Modal.open("Edit Options", body, [
@@ -168,85 +176,137 @@
   }
 
   document.getElementById("newTemplateBtn").addEventListener("click", async () => {
-    const name = prompt("Template name (Marathi/English):", "नवीन टेबल / New Table");
-    if (!name) return;
-    const tpl = await API.request("/api/admin/templates", { method:"POST", body:{ name } });
-    await loadTemplates();
-    await selectTemplate(tpl.id);
-    toast("Template created ✅", "ok");
+    try{
+      const name = prompt("Template name (Marathi/English):", "नवीन टेबल / New Table");
+      if (!name) return;
+      const tpl = await API.request("/api/admin/templates", { method:"POST", body:{ name } });
+      await loadTemplates();
+      await selectTemplate(tpl.id);
+      toast("Template created ✅", "ok");
+    }catch(e){
+      toast(e.message || "Failed to create template", "err");
+    }
   });
 
   document.getElementById("saveTplBtn").addEventListener("click", async () => {
-    if (!selectedTemplateId) return;
-    await API.request(`/api/admin/templates/${selectedTemplateId}`, { method:"PUT", body:{ name: tplNameEl.value.trim() } });
-    await loadTemplates();
-    toast("Saved ✅", "ok");
+    try{
+      if (!selectedTemplateId) return;
+      await API.request(`/api/admin/templates/${selectedTemplateId}`, { method:"PUT", body:{ name: tplNameEl.value.trim() } });
+      await loadTemplates();
+      toast("Saved ✅", "ok");
+    }catch(e){
+      toast(e.message || "Save failed", "err");
+    }
   });
 
   document.getElementById("deleteTplBtn").addEventListener("click", async () => {
-    if (!selectedTemplateId) return;
-    const ok = confirm("Delete this template and all its fields?");
-    if (!ok) return;
-    await API.request(`/api/admin/templates/${selectedTemplateId}`, { method:"DELETE" });
-    selectedTemplateId = null;
-    await loadTemplates();
-    await selectTemplate(null);
-    toast("Deleted ✅", "ok");
+    try{
+      if (!selectedTemplateId) return;
+      const ok = confirm("Delete this template and all its fields?");
+      if (!ok) return;
+      await API.request(`/api/admin/templates/${selectedTemplateId}`, { method:"DELETE" });
+      selectedTemplateId = null;
+      await loadTemplates();
+      await selectTemplate(null);
+      toast("Deleted ✅", "ok");
+    }catch(e){
+      toast(e.message || "Delete failed", "err");
+    }
   });
 
   document.getElementById("addFieldBtn").addEventListener("click", async () => {
-    if (!selectedTemplateId) return;
-    const label = prompt("Field label (Marathi/English):", "माहिती / Information");
-    if (!label) return;
-    await API.request(`/api/admin/templates/${selectedTemplateId}/fields`, { method:"POST", body:{ label, type:"text", required:false } });
-    await selectTemplate(selectedTemplateId, true);
-    await loadTemplates();
-    toast("Field added ✅", "ok");
+    try{
+      if (!selectedTemplateId) return;
+      const label = prompt("Field label (Marathi/English):", "माहिती / Information");
+      if (!label) return;
+      await API.request(`/api/admin/templates/${selectedTemplateId}/fields`, { method:"POST", body:{ label, type:"text", required:false } });
+      await selectTemplate(selectedTemplateId, true);
+      await loadTemplates();
+      toast("Field added ✅", "ok");
+    }catch(e){
+      toast(e.message || "Failed to add field", "err");
+    }
   });
 
   document.getElementById("publishBtn").addEventListener("click", async () => {
-    if (!selectedTemplateId) return;
-    await saveFieldEdits();
-    await API.request(`/api/admin/templates/${selectedTemplateId}/publish`, { method:"POST" });
-    await loadTemplates();
-    toast("Published ✅", "ok");
+    try{
+      if (!selectedTemplateId) return;
+      await saveFieldEdits();
+      await API.request(`/api/admin/templates/${selectedTemplateId}/publish`, { method:"POST" });
+      await loadTemplates();
+      toast("Published ✅", "ok");
+    }catch(e){
+      toast(e.message || "Publish failed", "err");
+    }
   });
 
   document.getElementById("assignBtn").addEventListener("click", async () => {
-    if (!selectedTemplateId) return;
+    try{
+      if (!selectedTemplateId) return;
 
-    districts = await API.request("/api/admin/users?role=district");
-    const checks = districts.map(d => {
-      const cb = el("input", { type:"checkbox", value: d.id });
-      const row = el("label", { class:"item", style:"display:flex;align-items:center;gap:10px;cursor:pointer;" },
-        cb,
-        el("div", {},
-          el("div", { class:"item-title" }, d.district_name || d.username),
-          el("div", { class:"item-sub" }, `@${d.username}`)
+      // ✅ IMPORTANT: server requires published=1 before assign
+      const tplSummary = getSelectedTemplateSummary();
+      if (tplSummary && !tplSummary.published){
+        toast("Publish the template first.", "err");
+        return;
+      }
+
+      districts = await API.request("/api/admin/users?role=district");
+
+      const checks = districts.map(d => {
+        const cb = el("input", { type:"checkbox", value: d.id });
+        const row = el("label", { class:"item", style:"display:flex;align-items:center;gap:10px;cursor:pointer;" },
+          cb,
+          el("div", {},
+            el("div", { class:"item-title" }, d.district_name || d.username),
+            el("div", { class:"item-sub" }, `@${d.username}`)
+          )
+        );
+        return { d, cb, row };
+      });
+
+      const body = el("div", {},
+        el("div", { class:"small muted" }, "Select districts:"),
+        el("div", { style:"margin-top:10px;display:flex;flex-direction:column;gap:10px;max-height:320px;overflow:auto;padding-right:6px;" },
+          ...checks.map(x => x.row)
         )
       );
-      return { d, cb, row };
-    });
 
-    const body = el("div", {},
-      el("div", { class:"small muted" }, "Select districts to assign this template:"),
-      el("div", { style:"margin-top:10px;display:flex;flex-direction:column;gap:10px;max-height:320px;overflow:auto;padding-right:6px;" },
-        ...checks.map(x => x.row)
-      )
-    );
+      const assignBtn = el("button", { class:"btn primary", onclick: async () => {
+        try{
+          const ids = checks.filter(x => x.cb.checked).map(x => Number(x.cb.value));
+          if (!ids.length){
+            toast("Select at least one district.", "err");
+            return;
+          }
 
-    const assignBtn = el("button", { class:"btn primary", onclick: async () => {
-      const ids = checks.filter(x => x.cb.checked).map(x => Number(x.cb.value));
-      if (!ids.length) return alert("Select at least one district.");
-      await API.request(`/api/admin/templates/${selectedTemplateId}/assign`, { method:"POST", body:{ districtUserIds: ids } });
-      document.getElementById("modalClose").click();
-      toast("Assigned ✅", "ok");
-    }}, "Assign");
+          // double-check publish (in case list was stale)
+          const tplSummary2 = getSelectedTemplateSummary();
+          if (tplSummary2 && !tplSummary2.published){
+            toast("Publish the template first.", "err");
+            return;
+          }
 
-    Modal.open("Assign Template", body, [
-      el("button", { class:"btn", onclick: () => document.getElementById("modalClose").click() }, "Cancel"),
-      assignBtn
-    ]);
+          await API.request(`/api/admin/templates/${selectedTemplateId}/assign`, {
+            method:"POST",
+            body:{ districtUserIds: ids }
+          });
+
+          document.getElementById("modalClose").click();
+          toast("Assigned ✅", "ok");
+        }catch(e){
+          toast(e.message || "Assign failed", "err");
+        }
+      }}, "Assign");
+
+      Modal.open("Assign Template", body, [
+        el("button", { class:"btn", onclick: () => document.getElementById("modalClose").click() }, "Cancel"),
+        assignBtn
+      ]);
+
+    }catch(e){
+      toast(e.message || "Failed to open assign dialog", "err");
+    }
   });
 
   document.getElementById("createDistrictBtn").addEventListener("click", async () => {
@@ -326,28 +386,32 @@
   }
 
   async function selectSubmission(id, skipList=false){
-    selectedSubmissionId = id;
-    if (!skipList) renderSubmissions();
-    const sub = await API.request(`/api/admin/submissions/${id}`);
-    submissionPreviewEl.innerHTML = "";
+    try{
+      selectedSubmissionId = id;
+      if (!skipList) renderSubmissions();
+      const sub = await API.request(`/api/admin/submissions/${id}`);
+      submissionPreviewEl.innerHTML = "";
 
-    const rows = sub.values.map(v => [v.label, v.value ?? ""]);
-    const table = el("table", { class:"table" },
-      el("thead", {}, el("tr", {}, el("th", {}, "Field"), el("th", {}, "Value"))),
-      el("tbody", {}, ...rows.map(r => el("tr", {}, el("td", {}, r[0]), el("td", {}, r[1]))))
-    );
+      const rows = sub.values.map(v => [v.label, v.value ?? ""]);
+      const table = el("table", { class:"table" },
+        el("thead", {}, el("tr", {}, el("th", {}, "Field"), el("th", {}, "Value"))),
+        el("tbody", {}, ...rows.map(r => el("tr", {}, el("td", {}, r[0]), el("td", {}, r[1]))))
+      );
 
-    submissionPreviewEl.appendChild(
-      el("div", {},
-        el("div", { class:"small muted", style:"margin-bottom:10px;" },
-          `Template: ${sub.template_name} | District: ${sub.district_name} | Status: ${sub.status.toUpperCase()}`
-        ),
-        table,
-        el("div", { class:"row gap8", style:"margin-top:12px;justify-content:flex-end;" },
-          el("button", { class:"btn", onclick: () => exportSubmissionCsv(sub) }, "Export CSV")
+      submissionPreviewEl.appendChild(
+        el("div", {},
+          el("div", { class:"small muted", style:"margin-bottom:10px;" },
+            `Template: ${sub.template_name} | District: ${sub.district_name} | Status: ${sub.status.toUpperCase()}`
+          ),
+          table,
+          el("div", { class:"row gap8", style:"margin-top:12px;justify-content:flex-end;" },
+            el("button", { class:"btn", onclick: () => exportSubmissionCsv(sub) }, "Export CSV")
+          )
         )
-      )
-    );
+      );
+    }catch(e){
+      toast(e.message || "Failed to load submission", "err");
+    }
   }
 
   function exportSubmissionCsv(sub){
@@ -362,10 +426,14 @@
   });
 
   document.getElementById("unlockBtn").addEventListener("click", async () => {
-    if (!selectedSubmissionId) return alert("Select a submission.");
-    await API.request(`/api/admin/submissions/${selectedSubmissionId}/unlock`, { method:"POST" });
-    await loadSubmissions();
-    toast("Unlocked ✅", "ok");
+    try{
+      if (!selectedSubmissionId) return alert("Select a submission.");
+      await API.request(`/api/admin/submissions/${selectedSubmissionId}/unlock`, { method:"POST" });
+      await loadSubmissions();
+      toast("Unlocked ✅", "ok");
+    }catch(e){
+      toast(e.message || "Unlock failed", "err");
+    }
   });
 
   document.addEventListener("change", async (e) => {
