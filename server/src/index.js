@@ -34,18 +34,39 @@ async function main(){
   });
 
   const app = express();
-  app.use(cors());
+
+  // ✅ CORS (Allow same-origin + future cookie support)
+  app.use(cors({
+    origin: true,
+    credentials: true
+  }));
+
   app.use(express.json({ limit: "1mb" }));
 
+  // ✅ Disable caching for API responses (prevents 304 stale behavior)
+  app.use("/api", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    next();
+  });
+
   const publicDir = path.join(__dirname, "..", "..", "public");
-  app.use(express.static(publicDir));
+  app.use(express.static(publicDir, {
+    etag: true, // ok for static
+    maxAge: "1h"
+  }));
 
   app.locals.JWT_SECRET = JWT_SECRET;
 
   app.get("/api/health", (_, res) => res.json({ ok: true }));
 
+  // ✅ Auth guard (keep /login public)
   app.use("/api", (req, res, next) => {
     if (req.path === "/login") return next();
+    // if you add logout later, keep it public:
+    if (req.path === "/logout") return next();
     return authMiddleware(JWT_SECRET)(req, res, next);
   });
 

@@ -4,11 +4,15 @@ const API = {
   clearToken: () => localStorage.removeItem("dt_token"),
 
   async request(path, { method = "GET", body, headers = {} } = {}) {
+    const token = API.token();
+
     const res = await fetch(path, {
       method,
+      credentials: "include",      // ✅ important for cookie-based auth (now/future)
+      cache: "no-store",           // ✅ prevents 304 + stale cached API responses
       headers: {
         "Content-Type": "application/json",
-        "Authorization": API.token() ? `Bearer ${API.token()}` : "",
+        ...(token ? { "Authorization": `Bearer ${token}` } : {}), // ✅ only send when exists
         ...headers,
       },
       body: body ? JSON.stringify(body) : undefined,
@@ -32,6 +36,16 @@ const API = {
   async login(username, password) {
     return API.request("/api/login", { method: "POST", body: { username, password } });
   },
+
+  async logout() {
+    // ✅ if your server adds /api/logout later, this will work
+    try {
+      return await API.request("/api/logout", { method: "POST" });
+    } catch (e) {
+      // ignore if endpoint doesn't exist
+      return null;
+    }
+  }
 };
 
 function el(tag, attrs = {}, ...children) {
@@ -121,7 +135,7 @@ const Modal = {
 /* Polished Toast */
 function toast(message, type="ok", ms=1800){
   const stack = document.getElementById("toastStack");
-  if (!stack) return; // page may not have toast container
+  if (!stack) return;
   const node = document.createElement("div");
   node.className = `toast ${type === "err" ? "err" : "ok"}`;
   node.textContent = message;
@@ -142,6 +156,8 @@ async function ensureAuth(role){
     }
     return me;
   } catch(e){
+    // ✅ don't clear token aggressively if server is temporarily down
+    // but clearing is ok; keep your behavior:
     API.clearToken();
     window.location.href = "/";
     return null;
