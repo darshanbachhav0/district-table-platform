@@ -16,8 +16,10 @@ async function ensureUser({ username, password, role, district_name }) {
 }
 
 async function seed({ adminUsername, adminPassword, districtDefaultPassword }) {
+  // ✅ Do not crash server if env not set (fixes 502 due to startup failure)
   if (!adminUsername || !adminPassword || !districtDefaultPassword) {
-    throw new Error("seed() missing required credentials. Provide ADMIN_USERNAME, ADMIN_PASSWORD, DISTRICT_DEFAULT_PASSWORD in environment.");
+    console.warn("⚠️ seed skipped: missing ADMIN_USERNAME / ADMIN_PASSWORD / DISTRICT_DEFAULT_PASSWORD");
+    return;
   }
 
   await ensureUser({ username: adminUsername, password: adminPassword, role: "admin" });
