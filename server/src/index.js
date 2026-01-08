@@ -1,6 +1,5 @@
 require("dotenv").config();
 const path = require("path");
-const fs = require("fs");
 const express = require("express");
 const cors = require("cors");
 
@@ -12,35 +11,44 @@ const routes = require("./routes");
 
 const PORT = process.env.PORT || 8080;
 
-function pickPublicDir() {
-  const candidates = [
-    path.join(__dirname, "public"),
-    path.join(__dirname, "..", "..", "public"),
-    __dirname,
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
-    } catch {}
-  }
-  return __dirname;
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || !String(v).trim()) throw new Error(`Missing required environment variable: ${name}`);
+  return String(v);
 }
 
+const JWT_SECRET = requireEnv("JWT_SECRET");
+const ADMIN_USERNAME = requireEnv("ADMIN_USERNAME");
+const ADMIN_PASSWORD = requireEnv("ADMIN_PASSWORD");
+const DISTRICT_DEFAULT_PASSWORD = requireEnv("DISTRICT_DEFAULT_PASSWORD");
+requireEnv("MONGODB_URI");
+
 async function main() {
+  await connectMongo();
+
+  // ✅ Auto-fix broken counters + NaN template ids
+  await store.repairDatabase();
+
+  // ✅ Ensure indexes
+  await store.ensureIndexes();
+
+  // ✅ Seed users
+  await seed({
+    adminUsername: ADMIN_USERNAME,
+    adminPassword: ADMIN_PASSWORD,
+    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
+  });
+
   const app = express();
 
-  // Always start the server (avoid 502). If DB/env is broken, API will return 503/500 with clear message.
-  app.locals.JWT_SECRET = process.env.JWT_SECRET ? String(process.env.JWT_SECRET) : null;
-  app.locals.mongoReady = false;
-
-  // ✅ Disable ETag globally (prevents 304 caching issues for API)
+  // Disable caching/ETag issues
   app.set("etag", false);
   app.disable("etag");
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
-  // ✅ Never cache API responses
+  // Never cache API responses
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
@@ -50,9 +58,8 @@ async function main() {
     next();
   });
 
-  const publicDir = pickPublicDir();
-
-  // ✅ Static files (no cache)
+  // Static site
+  const publicDir = path.join(__dirname, "..", "..", "public");
   app.use(
     express.static(publicDir, {
       etag: false,
@@ -67,71 +74,38 @@ async function main() {
     })
   );
 
-  // Health endpoint (works even if DB is down)
-  app.get("/api/health", (_, res) => {
-    res.json({
-      ok: true,
-      mongoReady: !!app.locals.mongoReady,
-      jwtSecretSet: !!app.locals.JWT_SECRET,
-    });
-  });
+  app.locals.JWT_SECRET = JWT_SECRET;
 
-  // If mongo is not ready, block API (except /login and /health) with 503
+  app.get("/api/health", (_, res) => res.json({ ok: true }));
+
+  // Auth guard (keep /login public)
   app.use("/api", (req, res, next) => {
-    if (req.path === "/health" || req.path === "/login") return next();
-    if (!app.locals.mongoReady) {
-      return res.status(503).json({ error: "Database not ready. Check Render logs / Mongo connection." });
-    }
-    if (!app.locals.JWT_SECRET) {
-      return res.status(500).json({ error: "Server misconfigured: missing JWT_SECRET env var." });
-    }
-    return next();
+    if (req.path === "/login") return next();
+    return authMiddleware(JWT_SECRET)(req, res, next);
   });
 
-  // ✅ Auth guard (keep /login public)
-  app.use("/api", (req, res, next) => {
-    if (req.path === "/login" || req.path === "/health") return next();
-    return authMiddleware(app.locals.JWT_SECRET)(req, res, next);
-  });
-
-  // Routes
   app.use("/api", routes);
 
-  // Global error handler (prevents crashes -> prevents 502)
+  // ✅ JSON error handler (so frontend sees the real problem)
   app.use((err, req, res, next) => {
-    console.error("Unhandled error:", err);
-    if (res.headersSent) return next(err);
-    res.status(500).json({ error: "Server error. Check Render logs." });
-  });
+    console.error("API ERROR:", err);
 
-  // SPA fallback
-  app.get("*", (req, res) => {
-    const indexPath = path.join(publicDir, "index.html");
-    if (fs.existsSync(indexPath)) return res.sendFile(indexPath);
-    res.status(404).send("Not Found");
-  });
+    const status = err.status || 500;
 
-  // Start listening first (so no 502)
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-  // Connect DB + repair + indexes + seed (safe, won’t crash server)
-  try {
-    await connectMongo();
-    await store.repairOnStartup();   // ✅ fixes counters + fixes old templates with invalid ids
-    await store.ensureIndexesSafe(); // ✅ indexes but never crash on duplicates
-    await seed({
-      adminUsername: process.env.ADMIN_USERNAME,
-      adminPassword: process.env.ADMIN_PASSWORD,
-      districtDefaultPassword: process.env.DISTRICT_DEFAULT_PASSWORD,
+    // If you want to see real error in browser, set DEBUG_API_ERRORS=1 in Render env
+    const debug = process.env.DEBUG_API_ERRORS === "1";
+    res.status(status).json({
+      error: debug ? (err.message || "Server error") : "Server error. Check Render logs.",
+      ...(debug ? { stack: err.stack } : {}),
     });
-    app.locals.mongoReady = true;
-    console.log("✅ Startup completed (mongoReady=true)");
-  } catch (e) {
-    console.error("❌ Startup init failed (server still running):", e);
-    app.locals.mongoReady = false;
-  }
+  });
+
+  app.get("*", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
+
+  app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
 }
 
 main().catch((e) => {
-  console.error("Fatal (should not happen):", e);
+  console.error("Fatal:", e);
+  process.exit(1);
 });

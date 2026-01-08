@@ -1,44 +1,74 @@
 const { db } = require("./mongo");
 
-function nowISO(){ return new Date().toISOString(); }
-function col(name){ return db().collection(name); }
-
-function slugKey(label) {
-  const base = String(label || "field").trim().toLowerCase();
-  const cleaned = base
-    .replace(/[\u0900-\u097F]/g, "")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return cleaned || ("field_" + Math.random().toString(36).slice(2, 8));
+function nowISO() {
+  return new Date().toISOString();
 }
 
-async function getMaxFiniteNumericId(collectionName){
-  const rows = await col(collectionName).aggregate([
-    { $match: { id: { $exists: true } } },
-    { $match: { $expr: { $in: [ { $type: "$id" }, ["int","long","double","decimal"] ] } } },
-    { $match: { $expr: { $eq: ["$id", "$id"] } } }, // removes NaN
-    { $group: { _id: null, maxId: { $max: "$id" } } }
-  ]).toArray();
+function col(name) {
+  return db().collection(name);
+}
+
+function isFiniteNumber(v) {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+function asNumber(v) {
+  if (typeof v === "number") return v;
+  if (typeof v === "string" && v.trim() !== "") return Number(v);
+  // mongodb Long/Int32/etc:
+  const n = Number(v);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+async function getMaxNumericId(collectionName) {
+  const rows = await col(collectionName)
+    .aggregate([
+      { $match: { id: { $exists: true } } },
+      // numeric BSON types only
+      { $match: { $expr: { $in: [{ $type: "$id" }, ["int", "long", "double", "decimal"]] } } },
+      // filter NaN: NaN !== NaN
+      { $match: { $expr: { $eq: ["$id", "$id"] } } },
+      { $group: { _id: null, maxId: { $max: "$id" } } },
+    ])
+    .toArray();
+
   const maxId = rows[0]?.maxId;
-  return Number.isFinite(maxId) ? Number(maxId) : 0;
+  const n = Number(maxId);
+  return Number.isFinite(n) ? n : 0;
 }
 
-async function ensureCounterHealthy(counterName, collectionName){
+/**
+ * Ensures _counters.{value} exists and is numeric, and is >= max(id) of that collection.
+ * This prevents NaN/null/string counter issues which break template creation.
+ */
+async function ensureCounterHealthy(counterName, collectionName) {
+  const maxId = await getMaxNumericId(collectionName);
+
   const c = await col("_counters").findOne({ _id: counterName });
   const raw = c?.value;
-  const num = typeof raw === "number" ? raw : Number(raw);
+  const num = asNumber(raw);
 
-  if (Number.isFinite(num)) return;
+  // If missing/invalid -> set to maxId
+  if (!Number.isFinite(num)) {
+    await col("_counters").updateOne(
+      { _id: counterName },
+      { $set: { value: maxId } },
+      { upsert: true }
+    );
+    return;
+  }
 
-  const base = collectionName ? await getMaxFiniteNumericId(collectionName) : 0;
-  await col("_counters").updateOne(
-    { _id: counterName },
-    { $set: { value: base } },
-    { upsert: true }
-  );
+  // If value is numeric string/Long/etc, normalize to JS number in DB
+  // Also ensure it's >= maxId to avoid collisions
+  if (typeof raw !== "number" || num < maxId) {
+    await col("_counters").updateOne(
+      { _id: counterName },
+      { $set: { value: Math.max(num, maxId) } }
+    );
+  }
 }
 
-async function nextId(counterName, collectionName){
+async function nextId(counterName, collectionName) {
   await ensureCounterHealthy(counterName, collectionName);
 
   const res = await col("_counters").findOneAndUpdate(
@@ -47,128 +77,107 @@ async function nextId(counterName, collectionName){
     { upsert: true, returnDocument: "after" }
   );
 
-  const out = Number(res?.value?.value);
+  const out = asNumber(res?.value?.value);
   if (!Number.isFinite(out)) {
+    // last attempt: repair and retry
     await ensureCounterHealthy(counterName, collectionName);
     const res2 = await col("_counters").findOneAndUpdate(
       { _id: counterName },
       { $inc: { value: 1 } },
       { upsert: true, returnDocument: "after" }
     );
-    const out2 = Number(res2?.value?.value);
-    if (!Number.isFinite(out2)) throw new Error(`Counter '${counterName}' is corrupted.`);
+    const out2 = asNumber(res2?.value?.value);
+    if (!Number.isFinite(out2)) {
+      throw new Error(`Counter '${counterName}' is corrupted and could not be repaired.`);
+    }
     return out2;
   }
+
   return out;
 }
 
-// ✅ Fix old templates created with id = NaN/null/missing/string
-async function repairTemplatesBadIds(){
-  const bad = await col("templates").find({
-    $or: [
-      { id: { $exists: false } },
-      { id: null },
-      { $expr: { $ne: ["$id", "$id"] } }, // NaN
-      { $expr: { $eq: [ { $type: "$id" }, "string" ] } }
-    ]
-  }).toArray();
+/**
+ * Repairs templates that have id: NaN/null/missing, which makes UI return id:null and breaks builder.
+ */
+async function repairBadTemplateIds() {
+  const bad = await col("templates")
+    .find({
+      $or: [
+        { id: { $exists: false } },
+        { id: null },
+        // NaN check
+        { $expr: { $ne: ["$id", "$id"] } },
+      ],
+    })
+    .project({ _id: 1, id: 1 })
+    .toArray();
 
   if (!bad.length) return { repaired: 0 };
 
-  // Make sure counter is at least max numeric id
-  const maxId = await getMaxFiniteNumericId("templates");
-  await col("_counters").updateOne(
-    { _id: "templates" },
-    { $set: { value: maxId } },
-    { upsert: true }
-  );
+  // Make sure counter starts from max good id
+  await ensureCounterHealthy("templates", "templates");
 
   let repaired = 0;
-
-  for (const doc of bad) {
-    const current = doc.id;
-
-    // If string numeric and not conflicting, convert to number
-    let target = null;
-    if (typeof current === "string") {
-      const n = Number(current.trim());
-      if (Number.isFinite(n)) {
-        const exists = await col("templates").findOne({ id: n, _id: { $ne: doc._id } }, { projection: { _id: 1 } });
-        if (!exists) target = n;
-      }
-    }
-
-    if (!Number.isFinite(target)) {
-      target = await nextId("templates", "templates");
-    }
-
+  for (const t of bad) {
+    const newId = await nextId("templates", "templates");
     await col("templates").updateOne(
-      { _id: doc._id },
-      { $set: { id: target, updated_at: nowISO() } }
+      { _id: t._id },
+      { $set: { id: newId, updated_at: nowISO() } }
     );
-
     repaired++;
   }
 
   return { repaired };
 }
 
-// ✅ Repair counters + IDs on startup
-async function repairOnStartup(){
+/**
+ * Run on startup
+ */
+async function repairDatabase() {
   await ensureCounterHealthy("users", "users");
   await ensureCounterHealthy("templates", "templates");
   await ensureCounterHealthy("fields", "fields");
   await ensureCounterHealthy("assignments", "assignments");
   await ensureCounterHealthy("values_kv", "values_kv");
 
-  await repairTemplatesBadIds();
+  await repairBadTemplateIds();
 }
 
-// ✅ Make indexes but never crash server
-async function ensureIndexesSafe(){
-  const safe = async (fn, label) => {
-    try { await fn(); }
-    catch (e) { console.warn(`⚠️ index skipped (${label}):`, e.message); }
-  };
+async function ensureIndexes() {
+  await col("users").createIndex({ username: 1 }, { unique: true });
+  await col("templates").createIndex({ updated_at: -1 });
 
-  await safe(() => col("users").createIndex({ username: 1 }, { unique: true }), "users.username unique");
-  await safe(() => col("templates").createIndex({ updated_at: -1 }), "templates.updated_at");
-  await safe(() => col("fields").createIndex({ template_id: 1, order_index: 1 }), "fields.template_id+order_index");
-  await safe(() => col("fields").createIndex({ template_id: 1, field_key: 1 }, { unique: true }), "fields.template_id+field_key unique");
-  await safe(() => col("assignments").createIndex({ template_id: 1, district_user_id: 1 }, { unique: true }), "assignments unique");
-  await safe(() => col("assignments").createIndex({ district_user_id: 1, updated_at: -1 }), "assignments updated");
-  await safe(() => col("values_kv").createIndex({ assignment_id: 1, field_key: 1 }, { unique: true }), "values_kv unique");
+  await col("fields").createIndex({ template_id: 1, order_index: 1 });
+  await col("fields").createIndex({ template_id: 1, field_key: 1 }, { unique: true });
+
+  await col("assignments").createIndex({ template_id: 1, district_user_id: 1 }, { unique: true });
+  await col("assignments").createIndex({ district_user_id: 1, updated_at: -1 });
+
+  await col("values_kv").createIndex({ assignment_id: 1, field_key: 1 }, { unique: true });
 }
 
 /* ================= USERS ================= */
 
-async function getUserByUsername(username){
+async function getUserByUsername(username) {
   return await col("users").findOne({ username: String(username) });
 }
 
-async function getUserPublicById(id){
-  const u = await col("users").findOne(
-    { id: Number(id) },
-    { projection: { _id: 0, id: 1, username: 1, role: 1, district_name: 1 } }
-  );
-  return u || null;
-}
-
-async function createUser({ username, password_hash, role, district_name }){
-  const id = await nextId("users","users");
+async function createUser({ username, password_hash, role, district_name }) {
+  const id = await nextId("users", "users");
   await col("users").insertOne({
     id,
     username: String(username),
     password_hash: String(password_hash),
     role,
-    district_name: district_name || null
+    district_name: district_name || null,
   });
   return id;
 }
 
-async function listUsers({ role } = {}){
+async function listUsers({ role } = {}) {
   const q = {};
   if (role) q.role = role;
+
   return await col("users")
     .find(q, { projection: { _id: 0, id: 1, username: 1, role: 1, district_name: 1 } })
     .sort({ id: -1 })
@@ -177,52 +186,43 @@ async function listUsers({ role } = {}){
 
 /* ================= TEMPLATES ================= */
 
-async function listTemplates(){
-  const rows = await col("templates")
+async function listTemplates() {
+  // Ensure template ids are repaired before listing (so UI always gets a valid id)
+  await repairBadTemplateIds();
+
+  return await col("templates")
     .aggregate([
       { $lookup: { from: "fields", localField: "id", foreignField: "template_id", as: "fields" } },
       { $addFields: { field_count: { $size: "$fields" } } },
-      { $project: { _id: 0, fields: 0 } },
-      { $sort: { updated_at: -1 } }
+      // Keep _id (useful for debugging), but remove heavy fields array
+      { $project: { fields: 0 } },
+      { $sort: { updated_at: -1 } },
     ])
     .toArray();
-  return rows;
 }
 
-async function createTemplate({ name, created_by }){
-  const id = await nextId("templates","templates");
+async function createTemplate({ name, created_by }) {
+  const id = await nextId("templates", "templates");
   const ts = nowISO();
+
   await col("templates").insertOne({
     id,
     name: String(name),
     published: false,
     created_by: created_by || null,
     created_at: ts,
-    updated_at: ts
+    updated_at: ts,
   });
+
   return id;
 }
 
-async function getTemplateById(id){
+async function getTemplateById(id) {
   return await col("templates").findOne({ id: Number(id) }, { projection: { _id: 0 } });
 }
 
-async function updateTemplate(id, { name }){
-  await col("templates").updateOne(
-    { id: Number(id) },
-    { $set: { name: String(name), updated_at: nowISO() } }
-  );
-}
-
-async function publishTemplate(id){
-  await col("templates").updateOne(
-    { id: Number(id) },
-    { $set: { published: true, updated_at: nowISO() } }
-  );
-}
-
-async function getTemplateDetail(id){
-  const tpl = await getTemplateById(id);
+async function getTemplateDetail(id) {
+  const tpl = await col("templates").findOne({ id: Number(id) }, { projection: { _id: 0 } });
   if (!tpl) return null;
 
   const fields = await col("fields")
@@ -232,17 +232,37 @@ async function getTemplateDetail(id){
 
   return {
     ...tpl,
-    fields: fields.map(f => ({ ...f, required: !!f.required, options: Array.isArray(f.options) ? f.options : [] }))
+    fields: fields.map((f) => ({
+      ...f,
+      required: !!f.required,
+      options: Array.isArray(f.options) ? f.options : [],
+    })),
   };
 }
 
-async function deleteTemplateCascade(template_id){
+async function updateTemplate(id, { name }) {
+  await col("templates").updateOne(
+    { id: Number(id) },
+    { $set: { name: String(name), updated_at: nowISO() } }
+  );
+}
+
+async function publishTemplate(id) {
+  await col("templates").updateOne(
+    { id: Number(id) },
+    { $set: { published: true, updated_at: nowISO() } }
+  );
+}
+
+async function deleteTemplateCascade(template_id) {
   template_id = Number(template_id);
 
-  const assignmentDocs = await col("assignments").find({ template_id }, { projection: { _id: 0, id: 1 } }).toArray();
-  const assignmentIds = assignmentDocs.map(a => a.id);
+  const assignmentDocs = await col("assignments")
+    .find({ template_id }, { projection: { _id: 0, id: 1 } })
+    .toArray();
 
-  if (assignmentIds.length){
+  const assignmentIds = assignmentDocs.map((a) => a.id);
+  if (assignmentIds.length) {
     await col("values_kv").deleteMany({ assignment_id: { $in: assignmentIds } });
   }
 
@@ -253,9 +273,19 @@ async function deleteTemplateCascade(template_id){
 
 /* ================= FIELDS ================= */
 
-async function addField({ template_id, label, type, required }){
+function slugKey(label) {
+  const base = String(label || "field").trim().toLowerCase();
+  const cleaned = base
+    .replace(/[\u0900-\u097F]/g, "") // remove devanagari from key
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return cleaned || "field_" + Math.random().toString(36).slice(2, 8);
+}
+
+async function addField({ template_id, label, type, required }) {
   template_id = Number(template_id);
-  const validTypes = ["text","textarea","number","date","select"];
+
+  const validTypes = ["text", "textarea", "number", "date", "select"];
   const t = validTypes.includes(type) ? type : "text";
 
   const last = await col("fields")
@@ -267,9 +297,9 @@ async function addField({ template_id, label, type, required }){
   const order_index = (last[0]?.order_index || 0) + 1;
 
   let key = slugKey(label);
-  const id = await nextId("fields","fields");
+  const id = await nextId("fields", "fields");
 
-  try{
+  try {
     await col("fields").insertOne({
       id,
       template_id,
@@ -278,10 +308,11 @@ async function addField({ template_id, label, type, required }){
       type: t,
       required: !!required,
       options: [],
-      order_index
+      order_index,
     });
-  }catch(e){
-    key = key + "_" + Math.random().toString(36).slice(2,5);
+  } catch (e) {
+    // duplicate key -> retry with suffix
+    key = key + "_" + Math.random().toString(36).slice(2, 5);
     await col("fields").insertOne({
       id,
       template_id,
@@ -290,22 +321,22 @@ async function addField({ template_id, label, type, required }){
       type: t,
       required: !!required,
       options: [],
-      order_index
+      order_index,
     });
   }
 
   await col("templates").updateOne({ id: template_id }, { $set: { updated_at: nowISO() } });
 }
 
-async function getFieldById(id){
+async function getFieldById(id) {
   return await col("fields").findOne({ id: Number(id) }, { projection: { _id: 0 } });
 }
 
-async function updateField(id, { label, type, required, options }){
+async function updateField(id, { label, type, required, options }) {
   const f = await getFieldById(id);
   if (!f) return;
 
-  const validTypes = ["text","textarea","number","date","select"];
+  const validTypes = ["text", "textarea", "number", "date", "select"];
   const patch = {};
 
   if (label !== undefined) patch.label = String(label);
@@ -317,9 +348,10 @@ async function updateField(id, { label, type, required, options }){
   await col("templates").updateOne({ id: f.template_id }, { $set: { updated_at: nowISO() } });
 }
 
-async function deleteField(id){
+async function deleteField(id) {
   const f = await getFieldById(id);
   if (!f) return;
+
   await col("fields").deleteOne({ id: Number(id) });
   await col("templates").updateOne({ id: f.template_id }, { $set: { updated_at: nowISO() } });
 }
@@ -588,36 +620,23 @@ function buildSubmissionEmailHtml({ districtName, templateName, sentAt, rows }) 
 }
 
 module.exports = {
-  repairOnStartup,
-  ensureIndexesSafe,
+  repairDatabase,
+  ensureIndexes,
 
   getUserByUsername,
-  getUserPublicById,
   createUser,
   listUsers,
 
   listTemplates,
   createTemplate,
   getTemplateById,
+  getTemplateDetail,
   updateTemplate,
   publishTemplate,
-  getTemplateDetail,
   deleteTemplateCascade,
 
   addField,
   getFieldById,
   updateField,
   deleteField,
-
-  assignTemplateToDistricts,
-  listSubmissions,
-  getSubmissionDetail,
-  unlockSubmission,
-
-  listDistrictAssignments,
-  getDistrictAssignmentDetail,
-  saveDistrictValues,
-  sendDistrictSubmission,
-
-  buildSubmissionEmailHtml
 };
