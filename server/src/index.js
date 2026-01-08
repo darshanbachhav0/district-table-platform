@@ -23,49 +23,48 @@ const ADMIN_PASSWORD = requireEnv("ADMIN_PASSWORD");
 const DISTRICT_DEFAULT_PASSWORD = requireEnv("DISTRICT_DEFAULT_PASSWORD");
 requireEnv("MONGODB_URI");
 
-async function main(){
+async function main() {
   await connectMongo();
   await store.ensureIndexes();
 
   await seed({
     adminUsername: ADMIN_USERNAME,
     adminPassword: ADMIN_PASSWORD,
-    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD
+    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
   });
 
   const app = express();
 
-  app.disable("etag"); // stops 304 for API in most cases
+  // ✅ Kill ETag globally (prevents 304 for API)
+  app.set("etag", false);
+  app.disable("etag");
 
-app.use("/api", (req, res, next) => {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-  next();
-});
-
-
-  // ✅ CORS (Allow same-origin + future cookie support)
-  app.use(cors({
-    origin: true,
-    credentials: true
-  }));
-
+  app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
-  // ✅ Disable caching for API responses (prevents 304 stale behavior)
+  // ✅ Never cache API (and remove any accidental etag)
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
     res.setHeader("Surrogate-Control", "no-store");
+    res.removeHeader("ETag");
     next();
   });
 
   const publicDir = path.join(__dirname, "..", "..", "public");
+
+  // ✅ Avoid stale JS/CSS/HTML (since files are not hashed)
   app.use(express.static(publicDir, {
-    etag: true, // ok for static
-    maxAge: "1h"
+    etag: false,
+    maxAge: 0,
+    setHeaders(res, filePath) {
+      if (filePath.endsWith(".js") || filePath.endsWith(".css") || filePath.endsWith(".html")) {
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+      }
+    }
   }));
 
   app.locals.JWT_SECRET = JWT_SECRET;
@@ -75,8 +74,6 @@ app.use("/api", (req, res, next) => {
   // ✅ Auth guard (keep /login public)
   app.use("/api", (req, res, next) => {
     if (req.path === "/login") return next();
-    // if you add logout later, keep it public:
-    if (req.path === "/logout") return next();
     return authMiddleware(JWT_SECRET)(req, res, next);
   });
 
