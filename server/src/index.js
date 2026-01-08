@@ -25,66 +25,34 @@ requireEnv("MONGODB_URI");
 
 async function main() {
   await connectMongo();
+  await store.repairCounters();     // ✅ NEW: fixes NaN counters + repairs old templates
   await store.ensureIndexes();
 
   await seed({
     adminUsername: ADMIN_USERNAME,
     adminPassword: ADMIN_PASSWORD,
-    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
+    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD
   });
 
   const app = express();
 
-  // ✅ Kill ETag globally (prevents 304 for API)
-  app.set("etag", false);
-  app.disable("etag");
+  app.locals.JWT_SECRET = JWT_SECRET;
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
-  // ✅ Never cache API (and remove any accidental etag)
-  app.use("/api", (req, res, next) => {
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    res.setHeader("Surrogate-Control", "no-store");
-    res.removeHeader("ETag");
-    next();
-  });
+  // Static frontend
+  app.use(express.static(path.join(__dirname)));
 
-  const publicDir = path.join(__dirname, "..", "..", "public");
+  // Auth
+  app.use("/api", authMiddleware(app.locals.JWT_SECRET), routes);
 
-  // ✅ Avoid stale JS/CSS/HTML (since files are not hashed)
-  app.use(express.static(publicDir, {
-    etag: false,
-    maxAge: 0,
-    setHeaders(res, filePath) {
-      if (filePath.endsWith(".js") || filePath.endsWith(".css") || filePath.endsWith(".html")) {
-        res.setHeader("Cache-Control", "no-store");
-        res.setHeader("Pragma", "no-cache");
-        res.setHeader("Expires", "0");
-      }
-    }
-  }));
+  app.get("/health", (req, res) => res.json({ ok: true }));
 
-  app.locals.JWT_SECRET = JWT_SECRET;
-
-  app.get("/api/health", (_, res) => res.json({ ok: true }));
-
-  // ✅ Auth guard (keep /login public)
-  app.use("/api", (req, res, next) => {
-    if (req.path === "/login") return next();
-    return authMiddleware(JWT_SECRET)(req, res, next);
-  });
-
-  app.use("/api", routes);
-
-  app.get("*", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
-
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  app.listen(PORT, () => console.log(`Server running on :${PORT}`));
 }
 
 main().catch((e) => {
-  console.error("Fatal:", e);
+  console.error("Fatal startup error:", e);
   process.exit(1);
 });
