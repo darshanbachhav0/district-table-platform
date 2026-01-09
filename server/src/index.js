@@ -17,32 +17,40 @@ function requireEnv(name) {
   return String(v);
 }
 
+// Required envs
 const JWT_SECRET = requireEnv("JWT_SECRET");
 const ADMIN_USERNAME = requireEnv("ADMIN_USERNAME");
 const ADMIN_PASSWORD = requireEnv("ADMIN_PASSWORD");
 const DISTRICT_DEFAULT_PASSWORD = requireEnv("DISTRICT_DEFAULT_PASSWORD");
-requireEnv("MONGODB_URI");
+
+// ✅ Fix: define mongoUri properly
+const MONGODB_URI = requireEnv("MONGODB_URI");
+// optional, if you set it on Render
+const MONGODB_DB = (process.env.MONGODB_DB || "").trim() || null;
 
 async function main() {
-  await connectMongo({ uri: mongoUri, dbName: mongoDbName });
+  // ✅ works whether mongo.js accepts params or not (we’ll update mongo.js too)
+  await connectMongo({ uri: MONGODB_URI, dbName: MONGODB_DB });
 
-// ✅ repair first, then indexes
-await store.repairDatabase();
-await store.ensureIndexes();
+  // ✅ IMPORTANT: repair DB first, then indexes
+  await store.repairDatabase();
+  await store.ensureIndexes();
 
-await seedIfNeeded();
-
+  await seed({
+    adminUsername: ADMIN_USERNAME,
+    adminPassword: ADMIN_PASSWORD,
+    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
+  });
 
   const app = express();
 
-  // Disable caching/ETag issues
   app.set("etag", false);
   app.disable("etag");
 
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: "1mb" }));
 
-  // Never cache API responses
+  // No cache for API
   app.use("/api", (req, res, next) => {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
@@ -52,8 +60,8 @@ await seedIfNeeded();
     next();
   });
 
-  // Static site
   const publicDir = path.join(__dirname, "..", "..", "public");
+
   app.use(
     express.static(publicDir, {
       etag: false,
@@ -79,20 +87,6 @@ await seedIfNeeded();
   });
 
   app.use("/api", routes);
-
-  // ✅ JSON error handler (so frontend sees the real problem)
-  app.use((err, req, res, next) => {
-    console.error("API ERROR:", err);
-
-    const status = err.status || 500;
-
-    // If you want to see real error in browser, set DEBUG_API_ERRORS=1 in Render env
-    const debug = process.env.DEBUG_API_ERRORS === "1";
-    res.status(status).json({
-      error: debug ? (err.message || "Server error") : "Server error. Check Render logs.",
-      ...(debug ? { stack: err.stack } : {}),
-    });
-  });
 
   app.get("*", (req, res) => res.sendFile(path.join(publicDir, "index.html")));
 
