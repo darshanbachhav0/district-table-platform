@@ -24,20 +24,14 @@ const DISTRICT_DEFAULT_PASSWORD = requireEnv("DISTRICT_DEFAULT_PASSWORD");
 requireEnv("MONGODB_URI");
 
 async function main() {
-  await connectMongo();
+  await connectMongo({ uri: mongoUri, dbName: mongoDbName });
 
-  // ✅ Auto-fix broken counters + NaN template ids
-  await store.repairDatabase();
+// ✅ repair first, then indexes
+await store.repairDatabase();
+await store.ensureIndexes();
 
-  // ✅ Ensure indexes
-  await store.ensureIndexes();
+await seedIfNeeded();
 
-  // ✅ Seed users
-  await seed({
-    adminUsername: ADMIN_USERNAME,
-    adminPassword: ADMIN_PASSWORD,
-    districtDefaultPassword: DISTRICT_DEFAULT_PASSWORD,
-  });
 
   const app = express();
 
