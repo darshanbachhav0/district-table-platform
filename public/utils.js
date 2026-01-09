@@ -144,19 +144,32 @@ const Modal = {
 };
 
 /* Toast */
-function toast(message, type = "ok", ms = 1800) {
-  const stack = document.getElementById("toastStack");
-  if (!stack) return;
-  const node = document.createElement("div");
-  node.className = `toast ${type === "err" ? "err" : "ok"}`;
-  node.textContent = message;
-  stack.appendChild(node);
+function toast(message, type = "info") {
+  let stack = document.getElementById("toastStack");
+  if (!stack) {
+    stack = document.createElement("div");
+    stack.id = "toastStack";
+    stack.style.position = "fixed";
+    stack.style.right = "16px";
+    stack.style.bottom = "16px";
+    stack.style.display = "flex";
+    stack.style.flexDirection = "column";
+    stack.style.gap = "10px";
+    stack.style.zIndex = "99999";
+    document.body.appendChild(stack);
+  }
+
+  const el = document.createElement("div");
+  el.className = `toast ${type}`;
+  el.textContent = message;
+  stack.appendChild(el);
+
   setTimeout(() => {
-    node.style.opacity = "0";
-    node.style.transform = "translateY(6px)";
-    setTimeout(() => node.remove(), 220);
-  }, ms);
+    el.style.opacity = "0";
+    setTimeout(() => el.remove(), 250);
+  }, 2800);
 }
+
 
 async function ensureAuth(role) {
   try {
