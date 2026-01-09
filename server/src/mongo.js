@@ -11,7 +11,6 @@ function requireEnv(name) {
 
 function inferDbNameFromUri(uri) {
   try {
-    // mongodb+srv://.../dbname?...
     const afterSlash = uri.split("://")[1].split("/").slice(1).join("/");
     const dbPart = afterSlash.split("?")[0];
     if (dbPart && dbPart.trim()) return dbPart.trim();
@@ -19,17 +18,16 @@ function inferDbNameFromUri(uri) {
   return null;
 }
 
-async function connectMongo() {
+// ✅ Now supports connectMongo() OR connectMongo({uri, dbName})
+async function connectMongo(opts = {}) {
   if (_db) return _db;
 
-  const uri = requireEnv("MONGODB_URI");
-  const envDb = process.env.MONGODB_DB && String(process.env.MONGODB_DB).trim();
+  const uri = opts.uri || requireEnv("MONGODB_URI");
+  const envDb = (opts.dbName || process.env.MONGODB_DB || "").toString().trim();
   const uriDb = inferDbNameFromUri(uri);
   const dbName = envDb || uriDb || "district_platform";
 
-  client = new MongoClient(uri, {
-    maxPoolSize: 10
-  });
+  client = new MongoClient(uri, { maxPoolSize: 10 });
 
   await client.connect();
   _db = client.db(dbName);
